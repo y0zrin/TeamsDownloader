@@ -57,11 +57,11 @@ class AssignmentService:
         return True, f"✅ {class_name} を追加しました"
     
     def edit_class(self, index, new_class_name):
-        """クラスを編集（新機能）"""
+        """クラスを編集(新機能)"""
         if not (0 <= index < len(self.config["classes"])):
             return False, "❌ 無効な番号です"
         
-        # 同じ名前がすでに存在するかチェック（自分以外）
+        # 同じ名前がすでに存在するかチェック(自分以外)
         for i, cls in enumerate(self.config["classes"]):
             if i != index and cls["name"] == new_class_name:
                 return False, f"{new_class_name} は既に登録されています"
@@ -151,22 +151,36 @@ class AssignmentService:
         # 各学生フォルダから課題を収集
         assignments_set = set()
         
-        log(f"🔍 全{total_students}人をスキャン中...")
+        log(f"\n🔍 課題フォルダスキャン開始...")
+        log(f"   進捗状況を5人ごとに表示します")
+        log("")
         
         scanned_count = 0
         for student_folder in student_folders:
             scanned_count += 1
             
-            # 進捗ログ(10人ごと)
-            if scanned_count % 10 == 0:
-                progress_msg = f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了"
+            student_name = student_folder['name']
+            
+            # 進捗ログ(5人ごと + 処理中の学生名を常時表示)
+            if scanned_count % 5 == 0:
+                progress_msg = f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了 (処理中: {student_name})"
                 log(progress_msg)
+            elif scanned_count == 1:
+                # 最初の1人目は必ず表示
+                log(f"   🔍 スキャン中: 1人目 {student_name}")
+            elif scanned_count == total_students:
+                # 最後の1人も必ず表示
+                log(f"   🔍 スキャン中: {scanned_count}/{total_students}人目 {student_name} (最終)")
             
             student_path = f"{base_folder}/{student_folder['name']}"
             assignment_folders = api_client.get_assignment_folders(drive_id, student_path)
             
             for folder in assignment_folders:
                 assignments_set.add(folder["name"])
+        
+        # 最終進捗を表示
+        if scanned_count > 0:
+            log(f"\n   ✅ スキャン完了: {scanned_count}/{total_students}人")
         
         # キャッシュを更新
         sorted_assignments = sorted(list(assignments_set))

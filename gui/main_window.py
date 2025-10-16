@@ -18,11 +18,12 @@ from services.assignment import AssignmentService
 from services.downloader import DownloadService
 from gui.dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog, 
                          EditClassDialog, UnsubmittedStudentsDialog,
-                         SelectStudentsDialog, FontSettingsDialog)
+                         SelectStudentsDialog, FontSettingsDialog,
+                         ProgressDialog)
 
 
 class ToolTip:
-    """ツールチップ（マウスオーバーで表示されるヘルプテキスト）"""
+    """ツールチップ(マウスオーバーで表示されるヘルプテキスト)"""
     def __init__(self, widget, text, delay=500):
         self.widget = widget
         self.text = text
@@ -109,7 +110,7 @@ class TeamsDownloaderGUI:
         self.assignment_service = AssignmentService()
         self.download_service = DownloadService(self.api_client, self.assignment_cache)
         
-        # フォント設定を読み込み（新機能2）
+        # フォント設定を読み込み(新機能2)
         self.font_config = self.assignment_cache.get_font_config()
         
         # デバイスコードダイアログ
@@ -181,10 +182,10 @@ class TeamsDownloaderGUI:
         # キャッシュの暗号化状態を表示
         from utils.crypto import ENCRYPTION_AVAILABLE
         if ENCRYPTION_AVAILABLE:
-            self.log("💾 キャッシュ機能が有効（手動更新まで有効）")
+            self.log("💾 キャッシュ機能が有効(手動更新まで有効)")
             self.log("🔒 キャッシュは暗号化されています")
         else:
-            self.log("💾 キャッシュ機能が有効（手動更新まで有効）")
+            self.log("💾 キャッシュ機能が有効(手動更新まで有効)")
             self.log("⚠️  暗号化ライブラリ未導入 - キャッシュは平文で保存されます")
             self.log("   (pip install cryptography で暗号化を有効化できます)")
         self.log("")
@@ -404,7 +405,7 @@ class TeamsDownloaderGUI:
         # ヒント
         self.hint_label = ttk.Label(
             parent,
-            text="💡 W-Click: DL | 📊: 未提出者 | 👥: 特定学生選択",
+            text="💡 W-Click: DL | 📊: 未提出者 | 👥: 特定学生DL",
             foreground="gray",
             font=("", self.font_config['ui'] - 1)
         )
@@ -416,13 +417,9 @@ class TeamsDownloaderGUI:
         # 課題データ保持
         self.all_assignments = []
         self.current_class_index = None
-        
-        # 特定学生選択モードのフラグと選択された学生リスト
-        self.selected_students_mode = False
-        self.selected_students_list = None
     
     def apply_font_settings(self):
-        """フォント設定を動的に適用（再起動不要）"""
+        """フォント設定を動的に適用(再起動不要)"""
         self.font_config = self.assignment_cache.get_font_config()
         
         # ログエリアのフォント
@@ -473,7 +470,7 @@ class TeamsDownloaderGUI:
             self.log(message)
     
     def edit_class(self):
-        """クラスを編集（新機能1）"""
+        """クラスを編集(新機能1)"""
         selection = self.class_listbox.curselection()
         if not selection:
             messagebox.showwarning("警告", "編集するクラスを選択してください")
@@ -539,10 +536,6 @@ class TeamsDownloaderGUI:
         index = selection[0]
         self.current_class_index = index
         
-        # 特定学生選択モードをリセット
-        self.selected_students_mode = False
-        self.selected_students_list = None
-        
         classes = self.assignment_service.get_classes()
         selected_class = classes[index]
         class_name = selected_class['name']
@@ -589,27 +582,40 @@ class TeamsDownloaderGUI:
         self.search_var.set("")
         
         if force_refresh:
-            self.status_label.config(text="🔄 最新の課題を読み込み中...", foreground="blue")
+            progress_title = "課題スキャン中"
+            progress_msg = "最新の課題一覧を取得しています..."
             self.log(f"🔄 {class_name}: 最新の課題一覧を取得中(フルスキャン)...")
         else:
-            self.status_label.config(text="📥 課題を読み込み中...", foreground="blue")
+            progress_title = "課題読み込み中"
+            progress_msg = "課題一覧を取得しています..."
             self.log(f"📥 {class_name}: 課題一覧を初回取得中...")
         
-        self.root.update()
+        # プログレスダイアログを表示
+        progress_dialog = ProgressDialog(self.root, progress_title, progress_msg)
         
         # バックグラウンドで課題を取得
         def fetch_assignments():
             try:
+                # プログレスバー更新用のコールバック
+                def progress_callback(msg):
+                    self.log(msg)
+                    # 詳細メッセージを更新
+                    if "人" in msg or "個" in msg or "進捗" in msg:
+                        self.root.after(0, lambda m=msg: progress_dialog.update_detail(m))
+                
                 sorted_assignments = self.assignment_service.scan_assignments(
                     self.api_client,
                     selected_class,
                     self.assignment_cache,
-                    progress_callback=self.log
+                    progress_callback=progress_callback
                 )
                 
                 self.all_assignments = sorted_assignments
                 
                 def update_ui():
+                    # プログレスダイアログを閉じる
+                    progress_dialog.close()
+                    
                     self.assignment_listbox.delete(0, tk.END)
                     for assignment in sorted_assignments:
                         self.assignment_listbox.insert(tk.END, assignment)
@@ -631,10 +637,15 @@ class TeamsDownloaderGUI:
             except Exception as e:
                 error_msg = f"❌ エラー: {str(e)}"
                 self.log(error_msg)
-                self.root.after(0, lambda: self.status_label.config(
-                    text=error_msg,
-                    foreground="red"
-                ))
+                
+                def show_error():
+                    progress_dialog.close()
+                    self.status_label.config(
+                        text=error_msg,
+                        foreground="red"
+                    )
+                
+                self.root.after(0, show_error)
         
         # スレッドで実行
         thread = threading.Thread(target=fetch_assignments)
@@ -659,7 +670,7 @@ class TeamsDownloaderGUI:
                 self.assignment_listbox.insert(tk.END, assignment)
     
     def check_unsubmitted(self):
-        """未提出者を確認（新機能4）"""
+        """未提出者を確認(新機能4)"""
         if self.current_class_index is None:
             messagebox.showwarning("警告", "クラスを選択してください")
             return
@@ -678,14 +689,30 @@ class TeamsDownloaderGUI:
             if not self.authenticate_with_gui():
                 return
         
+        # プログレスダイアログを表示
+        progress_dialog = ProgressDialog(
+            self.root,
+            "未提出者確認中",
+            f"「{assignment_name}」の未提出者を確認しています..."
+        )
+        
         # バックグラウンドで未提出者を取得
         def fetch_unsubmitted():
             try:
+                # プログレスバー更新用のコールバック
+                def progress_callback(msg):
+                    self.log(msg)
+                    if "人" in msg or "進捗" in msg:
+                        self.root.after(0, lambda m=msg: progress_dialog.update_detail(m))
+                
                 unsubmitted_list, error = self.download_service.get_unsubmitted_students(
                     selected_class,
                     assignment_name,
-                    progress_callback=self.log
+                    progress_callback=progress_callback
                 )
+                
+                # プログレスダイアログを閉じる
+                self.root.after(0, lambda: progress_dialog.close())
                 
                 if error:
                     self.root.after(0, lambda: messagebox.showerror("エラー", error))
@@ -703,7 +730,7 @@ class TeamsDownloaderGUI:
                     else:
                         messagebox.showinfo(
                             "確認完了",
-                            f"未提出者はいません！\n全員提出済みです。"
+                            f"未提出者はいません!\n全員提出済みです。"
                         )
                 
                 self.root.after(0, show_dialog)
@@ -711,6 +738,7 @@ class TeamsDownloaderGUI:
             except Exception as e:
                 error_msg = f"❌ 未提出者確認エラー: {str(e)}"
                 self.log(error_msg)
+                self.root.after(0, lambda: progress_dialog.close())
                 self.root.after(0, lambda: messagebox.showerror("エラー", error_msg))
         
         # スレッドで実行
@@ -719,7 +747,16 @@ class TeamsDownloaderGUI:
         thread.start()
     
     def select_specific_students(self):
-        """特定学生を選択（新機能5）"""
+        """特定学生を選択して即座にダウンロード(新機能5)"""
+        if self.current_class_index is None:
+            messagebox.showwarning("警告", "クラスを選択してください")
+            return
+        
+        selection = self.assignment_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("警告", "課題を選択してください")
+            return
+        
         students_info = self.assignment_cache.get_students_info()
         
         if not students_info:
@@ -729,28 +766,34 @@ class TeamsDownloaderGUI:
             )
             return
         
-        # 学生選択ダイアログを表示
-        dialog = SelectStudentsDialog(self.root, students_info)
+        # 現在のクラス名を取得
+        classes = self.assignment_service.get_classes()
+        selected_class = classes[self.current_class_index]
+        current_class_name = selected_class['name']
+        
+        # 学生選択ダイアログを表示(クラス名を渡す)
+        dialog = SelectStudentsDialog(self.root, students_info, current_class_name)
         selected_students = dialog.show()
         
         if selected_students:
-            self.selected_students_mode = True
-            self.selected_students_list = selected_students
-            self.log(f"👥 特定学生選択モード: {len(selected_students)}人を選択")
+            self.log(f"👥 {len(selected_students)}人を選択してダウンロードを開始")
             
-            # ダウンロードボタンのテキストを変更
-            self.download_button.config(text=f"📥 DL({len(selected_students)})")
+            # 選択された課題名を取得
+            assignment_name = self.assignment_listbox.get(selection[0])
+            classes = self.assignment_service.get_classes()
+            selected_class = classes[self.current_class_index]
             
-            messagebox.showinfo(
-                "選択完了",
-                f"{len(selected_students)}人を選択しました。\n\n次のダウンロードは選択した学生のみが対象になります。\n\n再度 👥 ボタンを押すと解除できます。"
+            # 即座にダウンロードを開始
+            self.download_in_progress = True
+            self.download_button.config(state='disabled')
+            self.cancel_button.config(state='normal')
+            
+            self.download_thread = threading.Thread(
+                target=self.download_assignment_background,
+                args=(selected_class, assignment_name, selected_students)
             )
-        else:
-            # 選択解除
-            self.selected_students_mode = False
-            self.selected_students_list = None
-            self.download_button.config(text="📥 DL")
-            self.log("👥 特定学生選択モードを解除")
+            self.download_thread.daemon = True
+            self.download_thread.start()
     
     def download_selected_assignment(self):
         """選択された課題をダウンロード"""
@@ -800,7 +843,7 @@ class TeamsDownloaderGUI:
             # ダウンロード進行中フラグをリセット
             self.download_in_progress = False
     
-    def download_assignment_background(self, selected_class, assignment_name):
+    def download_assignment_background(self, selected_class, assignment_name, selected_students=None):
         """課題をバックグラウンドでダウンロード"""
         try:
             # 認証
@@ -824,9 +867,6 @@ class TeamsDownloaderGUI:
                     self.root, student_name, codes, class_name
                 )
                 return dialog.show()
-            
-            # 特定学生選択モードの場合は選択した学生のみダウンロード
-            selected_students = self.selected_students_list if self.selected_students_mode else None
             
             download_count, student_count = self.download_service.download_assignment(
                 selected_class,
@@ -886,29 +926,8 @@ class TeamsDownloaderGUI:
         # メニューを表示
         menu.post(x, y)
     
-    def apply_font_settings(self):
-        """フォント設定を動的に適用(再起動不要)"""
-        self.font_config = self.assignment_cache.get_font_config()
-        
-        # ログエリアのフォント
-        self.log_text.configure(font=("Consolas", self.font_config['log']))
-        
-        # ステータスラベルのフォント
-        self.status_label.configure(font=("", self.font_config['ui']))
-        
-        # クラスリストのフォント
-        self.class_listbox.configure(font=("", self.font_config['list']))
-        
-        # 課題リストのフォント
-        self.assignment_listbox.configure(font=("", self.font_config['ui']))
-        
-        # ヒントラベルのフォント
-        self.hint_label.configure(font=("", self.font_config['ui'] - 1))
-        
-        self.log(f"✅ フォント設定を適用しました ({self.font_config['ui']}pt)")
-    
     def show_font_settings(self):
-        """フォント設定を表示（新機能2 - 再起動不要版）"""
+        """フォント設定を表示(新機能2 - 再起動不要版)"""
         current_size = self.assignment_cache.get_font_size()
         
         dialog = FontSettingsDialog(self.root, current_size)
@@ -1022,34 +1041,56 @@ class TeamsDownloaderGUI:
         
         selected_class = classes[self.current_class_index]
         
-        thread = threading.Thread(
-            target=self.debug_folder_structure_background,
-            args=(selected_class,)
+        # プログレスダイアログを表示
+        progress_dialog = ProgressDialog(
+            self.root,
+            "フォルダ構造確認中",
+            f"「{selected_class['name']}」のフォルダ構造を確認しています..."
         )
+        
+        def run_debug():
+            try:
+                self.log("\n" + "="*50)
+                self.log(f"🔍 フォルダ構造確認: {selected_class['name']}")
+                self.log("="*50)
+                
+                # 認証
+                if not self.auth_manager.access_token:
+                    self.root.after(0, lambda: progress_dialog.close())
+                    if not self.authenticate_with_gui():
+                        return
+                    # 再度プログレスダイアログを表示
+                    progress_dialog2 = ProgressDialog(
+                        self.root,
+                        "フォルダ構造確認中",
+                        f"「{selected_class['name']}」のフォルダ構造を確認しています..."
+                    )
+                else:
+                    progress_dialog2 = progress_dialog
+                
+                # プログレスバー更新用のコールバック
+                def progress_callback(msg):
+                    self.log(msg)
+                    if "人" in msg or "個" in msg or "進捗" in msg:
+                        self.root.after(0, lambda m=msg: progress_dialog2.update_detail(m))
+                
+                # スキャン実行
+                self.assignment_service.scan_assignments(
+                    self.api_client,
+                    selected_class,
+                    self.assignment_cache,
+                    progress_callback=progress_callback
+                )
+                
+                # 完了
+                self.root.after(0, lambda: progress_dialog2.close())
+                
+            except Exception as e:
+                self.log(f"\n❌ エラー: {e}")
+                import traceback
+                traceback.print_exc()
+                self.root.after(0, lambda: progress_dialog.close())
+        
+        thread = threading.Thread(target=run_debug)
         thread.daemon = True
         thread.start()
-    
-    def debug_folder_structure_background(self, selected_class):
-        """バックグラウンドでフォルダ構造を確認"""
-        try:
-            self.log("\n" + "="*50)
-            self.log(f"🔍 フォルダ構造確認: {selected_class['name']}")
-            self.log("="*50)
-            
-            # 認証
-            if not self.auth_manager.access_token:
-                if not self.authenticate_with_gui():
-                    return
-            
-            # スキャン実行
-            self.assignment_service.scan_assignments(
-                self.api_client,
-                selected_class,
-                self.assignment_cache,
-                progress_callback=self.log
-            )
-            
-        except Exception as e:
-            self.log(f"\n❌ エラー: {e}")
-            import traceback
-            traceback.print_exc()

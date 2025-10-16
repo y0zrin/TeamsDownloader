@@ -25,7 +25,7 @@ class DownloadService:
         self.cancelled = False
     
     def get_unsubmitted_students(self, class_config, assignment_name, progress_callback=None):
-        """未提出者を取得（新機能4 - クラス単位で厳密にフィルタリング）
+        """未提出者を取得(新機能4 - クラス単位で厳密にフィルタリング)
         
         Returns:
             tuple: (未提出者リスト, エラーメッセージ)
@@ -58,7 +58,7 @@ class DownloadService:
         # 学生情報を取得
         students_info = self.cache.get_students_info()
         if not students_info:
-            return [], "❌ 学生情報が見つかりません（students.csv/xlsxを配置してください）"
+            return [], "❌ 学生情報が見つかりません(students.csv/xlsxを配置してください)"
         
         # クラス名からクラスコードを抽出
         class_name = class_config['name']
@@ -70,14 +70,14 @@ class DownloadService:
         
         log(f"🎯 対象クラス: {class_name} (クラスコード: {target_class_code})")
         
-        # 現在のクラスに所属する学生のみを抽出（厳密な一致）
+        # 現在のクラスに所属する学生のみを抽出(厳密な一致)
         current_class_students = {}
         for name_key, info in students_info.items():
             if isinstance(info, list):
                 # 複数クラス記号を持つ学生 - すべてチェック
                 for student_info in info:
                     student_class_code = student_info.get('class_code', '')
-                    # 完全一致または前方一致（柔軟性を持たせる）
+                    # 完全一致または前方一致(柔軟性を持たせる)
                     if (student_class_code == target_class_code or 
                         student_class_code.startswith(target_class_code[:6])):
                         current_class_students[name_key] = student_info
@@ -114,7 +114,7 @@ class DownloadService:
                     'id': student_folder['id']
                 })
         
-        # SharePoint上の学生をフィルタリング（現在のクラスの学生のみ）
+        # SharePoint上の学生をフィルタリング(現在のクラスの学生のみ)
         filtered_students_list = []
         for student in cached_students_list:
             student_name = student['name']
@@ -124,9 +124,13 @@ class DownloadService:
             if cleaned_name in current_class_students:
                 filtered_students_list.append(student)
         
-        log(f"🎯 SharePoint上の該当学生: {len(filtered_students_list)}人（全体: {len(cached_students_list)}人）")
+        log(f"🎯 SharePoint上の該当学生: {len(filtered_students_list)}人(全体: {len(cached_students_list)}人)")
         
-        # 提出者を検出（フィルタリング済みの学生のみ）
+        # 提出者を検出(フィルタリング済みの学生のみ)
+        log(f"\n🔍 提出状況確認中...")
+        log(f"   進捗状況を10人ごとに表示します")
+        log("")
+        
         submitted_students = set()
         for idx, student in enumerate(filtered_students_list, 1):
             if self.cancelled:
@@ -135,7 +139,7 @@ class DownloadService:
             student_name = student['name']
             student_path = f"{base_folder}/{student_name}"
             
-            # 進捗表示（10人ごと）
+            # 進捗表示(10人ごと)
             if idx % 10 == 0 or idx == len(filtered_students_list):
                 log(f"   📊 進捗: {idx}/{len(filtered_students_list)}人確認完了")
             
@@ -154,7 +158,7 @@ class DownloadService:
         
         log(f"✅ {len(submitted_students)}人が提出済み")
         
-        # 名簿から未提出者を抽出（現在のクラスの学生のみ）
+        # 名簿から未提出者を抽出(現在のクラスの学生のみ)
         unsubmitted = []
         
         for name_key, student_info in current_class_students.items():
@@ -177,7 +181,7 @@ class DownloadService:
     def download_assignment(self, class_config, assignment_name, output_base_dir, 
                            progress_callback=None, class_code_dialog_callback=None,
                            selected_students=None):
-        """課題をダウンロード（機能5: 特定学生選択対応）
+        """課題をダウンロード(機能5: 特定学生選択対応)
         
         Args:
             class_config: クラス設定
@@ -185,7 +189,7 @@ class DownloadService:
             output_base_dir: 出力ベースディレクトリ
             progress_callback: 進捗コールバック関数
             class_code_dialog_callback: クラス記号選択ダイアログコールバック
-            selected_students: 特定の学生のみダウンロードする場合の学生名リスト（新機能5）
+            selected_students: 特定の学生のみダウンロードする場合の学生名リスト(新機能5)
         
         Returns:
             tuple: (成功数, 学生数)
@@ -200,7 +204,7 @@ class DownloadService:
         
         log(f"\n{'='*50}")
         if selected_students:
-            log(f"📥 課題ダウンロード開始（特定学生のみ）: {assignment_name}")
+            log(f"📥 課題ダウンロード開始(特定学生のみ): {assignment_name}")
         else:
             log(f"📥 課題ダウンロード開始: {assignment_name}")
         log(f"{'='*50}")
@@ -258,6 +262,13 @@ class DownloadService:
             log(f"💾 学生リストをキャッシュから読み込み中...")
             log(f"✅ キャッシュから{len(cached_students_list)}人の学生リストを取得")
             
+            # 課題提出フォルダをスキャン
+            log(f"\n🔍 課題提出フォルダをスキャン中...")
+            log(f"   進捗状況を5人ごとに表示します")
+            log("")
+            
+            scanned_count = 0
+            
             # キャッシュされた学生リストから課題提出者をフィルタ
             for student in cached_students_list:
                 if self.cancelled:
@@ -271,6 +282,14 @@ class DownloadService:
                     cleaned_name = clean_student_name(student_name)
                     if cleaned_name not in selected_students_set:
                         continue
+                
+                scanned_count += 1
+                
+                # 進捗ログ(5人ごと)
+                if scanned_count % 5 == 0:
+                    log(f"   📊 進捗: {scanned_count}/{len(cached_students_list)}人スキャン (処理中: {student_name})")
+                elif scanned_count == 1:
+                    log(f"   🔍 スキャン開始: {student_name}")
                 
                 student_id = student['id']
                 student_path = f"{base_folder}/{student_name}"
@@ -308,18 +327,32 @@ class DownloadService:
                             'student_info': student_info
                         })
                         break
+            
+            # スキャン完了ログ
+            if scanned_count > 0:
+                log(f"\n   ✅ スキャン完了: {scanned_count}人")
         else:
             # キャッシュがない場合は従来通りスキャン
             log(f"🔍 学生データをスキャン中...")
             
             student_folders = self.api_client.get_student_folders(drive_id, base_folder)
+            total = len(student_folders)
             
-            for student_folder in student_folders:
+            log(f"   進捗状況を5人ごとに表示します")
+            log("")
+            
+            for idx, student_folder in enumerate(student_folders, 1):
                 if self.cancelled:
                     log("\n⚠️ ダウンロードがキャンセルされました")
                     return 0, 0
                 
                 student_name = student_folder["name"]
+                
+                # 進捗ログ
+                if idx % 5 == 0:
+                    log(f"   📊 進捗: {idx}/{total}人スキャン (処理中: {student_name})")
+                elif idx == 1:
+                    log(f"   🔍 スキャン開始: {student_name}")
                 
                 # 特定学生フィルタが有効な場合、対象外ならスキップ
                 if selected_students_set:
@@ -361,6 +394,8 @@ class DownloadService:
                             'student_info': student_info
                         })
                         break
+            
+            log(f"\n   ✅ スキャン完了: {total}人")
         
         student_count = len(student_data_list)
         

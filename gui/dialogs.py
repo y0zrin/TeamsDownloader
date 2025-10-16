@@ -408,11 +408,11 @@ class UnsubmittedStudentsDialog:
             print(f"クリップボードへのコピーエラー: {e}")
 
 
-# ========== 新機能5: 特定学生選択ダイアログ ==========
+# ========== 新機能5: 特定学生選択ダイアログ（クラスフィルタリング対応版）==========
 
 class SelectStudentsDialog:
-    """特定学生選択ダイアログ"""
-    def __init__(self, parent, students_info):
+    """特定学生選択ダイアログ（クラスフィルタリング＋clean_student_name対応版）"""
+    def __init__(self, parent, students_info, current_class_name):
         self.selected_students = None
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("ダウンロード対象学生を選択")
@@ -432,7 +432,7 @@ class SelectStudentsDialog:
         
         ttk.Label(
             title_frame,
-            text="📥 ダウンロード対象学生を選択",
+            text=f"📥 ダウンロード対象学生を選択 - {current_class_name}",
             font=("", 12, "bold")
         ).pack()
         
@@ -472,18 +472,33 @@ class SelectStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # 学生情報を格納
+        # クラス名からクラスコードを抽出
+        if '-' in current_class_name:
+            target_class_code = current_class_name.split('-')[-1]
+        else:
+            target_class_code = current_class_name
+        
+        # 学生情報を格納（現在のクラスのみ）
         self.all_students = []
         
-        # 学生情報からリストを作成
+        # 学生情報からリストを作成（クラスフィルタリング）
         if students_info:
             for name_key, info in students_info.items():
                 if isinstance(info, list):
                     # 複数クラス記号を持つ学生
                     for student_info in info:
-                        self.all_students.append(student_info)
+                        student_class_code = student_info.get('class_code', '')
+                        # 完全一致または前方一致（柔軟性を持たせる）
+                        if (student_class_code == target_class_code or 
+                            student_class_code.startswith(target_class_code[:6])):
+                            self.all_students.append(student_info)
+                            break
                 else:
-                    self.all_students.append(info)
+                    student_class_code = info.get('class_code', '')
+                    # 完全一致または前方一致
+                    if (student_class_code == target_class_code or 
+                        student_class_code.startswith(target_class_code[:6])):
+                        self.all_students.append(info)
             
             # ソート
             self.all_students.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
@@ -614,7 +629,10 @@ class SelectStudentsDialog:
                     expected_text = f"[{class_code}] {num_str} {name}"
                     
                     if expected_text == display_text:
-                        self.selected_students.append(name)
+                        # clean_student_name相当の処理を適用した名前を返す
+                        from utils.file_utils import clean_student_name
+                        cleaned_name = clean_student_name(name)
+                        self.selected_students.append(cleaned_name)
                         break
         
         self.dialog.destroy()
@@ -717,3 +735,81 @@ class FontSettingsDialog:
     def show(self):
         self.dialog.wait_window()
         return self.selected_size
+
+
+# ========== プログレスバーダイアログ ==========
+
+class ProgressDialog:
+    """プログレスバー表示ダイアログ（モーダル）"""
+    def __init__(self, parent, title="処理中", message="処理を実行しています..."):
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title(title)
+        self.dialog.geometry("500x200")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        self.dialog.protocol("WM_DELETE_WINDOW", lambda: None)  # 閉じるボタンを無効化
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 250
+        y = (self.dialog.winfo_screenheight() // 2) - 100
+        self.dialog.geometry(f"500x200+{x}+{y}")
+        
+        # メインフレーム
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # タイトルラベル
+        self.title_label = ttk.Label(
+            main_frame,
+            text=title,
+            font=("", 12, "bold")
+        )
+        self.title_label.pack(pady=(0, 15))
+        
+        # メッセージラベル
+        self.message_label = ttk.Label(
+            main_frame,
+            text=message,
+            font=("", 10)
+        )
+        self.message_label.pack(pady=(0, 10))
+        
+        # プログレスバー（不確定モード）
+        self.progress = ttk.Progressbar(
+            main_frame,
+            mode='indeterminate',
+            length=400
+        )
+        self.progress.pack(pady=(0, 10))
+        self.progress.start(10)  # アニメーション開始
+        
+        # 詳細メッセージラベル
+        self.detail_label = ttk.Label(
+            main_frame,
+            text="",
+            font=("", 9),
+            foreground="gray"
+        )
+        self.detail_label.pack(pady=(10, 0))
+        
+        # ダイアログを更新
+        self.dialog.update()
+    
+    def update_message(self, message):
+        """メッセージを更新"""
+        self.message_label.config(text=message)
+        self.dialog.update()
+    
+    def update_detail(self, detail):
+        """詳細メッセージを更新"""
+        self.detail_label.config(text=detail)
+        self.dialog.update()
+    
+    def close(self):
+        """ダイアログを閉じる"""
+        try:
+            self.progress.stop()
+            self.dialog.destroy()
+        except:
+            pass
