@@ -16,7 +16,9 @@ from core.api_client import GraphAPIClient
 from core.cache import AssignmentCache
 from services.assignment import AssignmentService
 from services.downloader import DownloadService
-from gui.dialogs import DeviceCodeDialog, ClassCodeSelectionDialog
+from gui.dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog, 
+                         EditClassDialog, UnsubmittedStudentsDialog,
+                         SelectStudentsDialog, FontSettingsDialog)
 
 
 class TextRedirector:
@@ -48,6 +50,9 @@ class TeamsDownloaderGUI:
         self.assignment_cache = AssignmentCache(cache_hours=24)
         self.assignment_service = AssignmentService()
         self.download_service = DownloadService(self.api_client, self.assignment_cache)
+        
+        # フォント設定を読み込み（新機能2）
+        self.font_config = self.assignment_cache.get_font_config()
         
         # デバイスコードダイアログ
         self.device_code_dialog = None
@@ -85,7 +90,7 @@ class TeamsDownloaderGUI:
             wrap=tk.WORD,
             height=10,
             state='disabled',
-            font=("Consolas", 9)
+            font=("Consolas", self.font_config['log'])
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
@@ -156,11 +161,17 @@ class TeamsDownloaderGUI:
             self.log(traceback.format_exc())
         
         self.log("")
+        
+        # フォント設定を表示
+        font_size_name = self.assignment_cache.get_font_size()
+        size_names = {'smallest': '最小', 'small': '小', 'medium': '中', 'large': '大', 'largest': '最大'}
+        self.log(f"🔤 フォントサイズ: {size_names.get(font_size_name, '小')} ({self.font_config['ui']}pt)")
+        self.log("")
     
     def create_class_panel(self, parent):
         """左パネル: クラス管理"""
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
+        parent.rowconfigure(2, weight=1)
         
         # ボタンフレーム
         button_frame = ttk.Frame(parent)
@@ -174,33 +185,49 @@ class TeamsDownloaderGUI:
             button_row1,
             text="➕ 追加",
             command=self.add_class
-        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        
+        ttk.Button(
+            button_row1,
+            text="✏️ 編集",
+            command=self.edit_class
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
         
         ttk.Button(
             button_row1,
             text="🗑️ 削除",
             command=self.delete_class
-        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
         
         # 2行目のボタン
         button_row2 = ttk.Frame(button_frame)
-        button_row2.pack(fill=tk.X)
+        button_row2.pack(fill=tk.X, pady=(0, 2))
         
         ttk.Button(
             button_row2,
             text="📁 構造",
             command=self.debug_folder_structure
-        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
         
         ttk.Button(
             button_row2,
             text="🧹 キャッシュ",
             command=self.clear_cache
-        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        
+        # 3行目のボタン（新機能2: フォント設定）
+        button_row3 = ttk.Frame(button_frame)
+        button_row3.pack(fill=tk.X)
+        
+        ttk.Button(
+            button_row3,
+            text="🔤 フォント",
+            command=self.show_font_settings
+        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
         
         # クラスリスト
         list_frame = ttk.Frame(parent)
-        list_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        list_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
         
@@ -210,7 +237,7 @@ class TeamsDownloaderGUI:
         self.class_listbox = tk.Listbox(
             list_frame,
             yscrollcommand=scrollbar.set,
-            font=("", 11)
+            font=("", self.font_config['list'])
         )
         self.class_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         scrollbar.config(command=self.class_listbox.yview)
@@ -228,7 +255,7 @@ class TeamsDownloaderGUI:
             parent,
             text="← クラスを選択してください",
             foreground="gray",
-            font=("", 10)
+            font=("", self.font_config['ui'])
         )
         self.status_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
         
@@ -249,24 +276,40 @@ class TeamsDownloaderGUI:
             text="🔄",
             command=self.refresh_assignments,
             width=3
-        ).grid(row=0, column=2, padx=(0, 5))
+        ).grid(row=0, column=2, padx=(0, 2))
+        
+        # 新機能4: 未提出者確認ボタン
+        ttk.Button(
+            control_frame,
+            text="📊",
+            command=self.check_unsubmitted,
+            width=3
+        ).grid(row=0, column=3, padx=(0, 2))
+        
+        # 新機能5: 特定学生選択ボタン
+        ttk.Button(
+            control_frame,
+            text="👥",
+            command=self.select_specific_students,
+            width=3
+        ).grid(row=0, column=4, padx=(0, 5))
         
         self.download_button = ttk.Button(
             control_frame,
-            text="📥 ダウンロード",
+            text="📥 DL",
             command=self.download_selected_assignment,
-            width=15
+            width=8
         )
-        self.download_button.grid(row=0, column=3, padx=(0, 5))
+        self.download_button.grid(row=0, column=5, padx=(0, 2))
         
         self.cancel_button = ttk.Button(
             control_frame,
-            text="❌ キャンセル",
+            text="❌",
             command=self.cancel_download,
-            width=12,
+            width=3,
             state='disabled'
         )
-        self.cancel_button.grid(row=0, column=4)
+        self.cancel_button.grid(row=0, column=6)
         
         # 課題リスト
         list_frame = ttk.Frame(parent)
@@ -280,7 +323,7 @@ class TeamsDownloaderGUI:
         self.assignment_listbox = tk.Listbox(
             list_frame,
             yscrollcommand=scrollbar.set,
-            font=("", 10)
+            font=("", self.font_config['ui'])
         )
         self.assignment_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         scrollbar.config(command=self.assignment_listbox.yview)
@@ -291,9 +334,9 @@ class TeamsDownloaderGUI:
         # ヒント
         hint_label = ttk.Label(
             parent,
-            text="💡 ダブルクリックでダウンロード | ❌ ダウンロード中はキャンセル可能",
+            text="💡 W-Click: DL | 📊: 未提出者 | 👥: 特定学生選択",
             foreground="gray",
-            font=("", 8)
+            font=("", self.font_config['ui'] - 1)
         )
         hint_label.grid(row=3, column=0, pady=(5, 0))
         
@@ -303,6 +346,10 @@ class TeamsDownloaderGUI:
         # 課題データ保持
         self.all_assignments = []
         self.current_class_index = None
+        
+        # 特定学生選択モードのフラグと選択された学生リスト
+        self.selected_students_mode = False
+        self.selected_students_list = None
     
     def log(self, message):
         """ログメッセージを表示"""
@@ -333,6 +380,38 @@ class TeamsDownloaderGUI:
         else:
             self.refresh_class_list()
             self.log(message)
+    
+    def edit_class(self):
+        """クラスを編集（新機能1）"""
+        selection = self.class_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("警告", "編集するクラスを選択してください")
+            return
+        
+        index = selection[0]
+        classes = self.assignment_service.get_classes()
+        current_name = classes[index]["name"]
+        
+        # 編集ダイアログを表示
+        dialog = EditClassDialog(self.root, current_name)
+        new_name = dialog.show()
+        
+        if new_name and new_name != current_name:
+            success, message = self.assignment_service.edit_class(index, new_name)
+            if success:
+                self.refresh_class_list()
+                
+                # 編集したクラスを再選択
+                self.class_listbox.selection_set(index)
+                
+                # 課題リストをクリア
+                self.assignment_listbox.delete(0, tk.END)
+                self.all_assignments.clear()
+                self.status_label.config(text="← クラスを選択してください", foreground="gray")
+                
+                self.log(message)
+            else:
+                messagebox.showerror("エラー", message)
     
     def delete_class(self):
         """選択されたクラスを削除"""
@@ -368,6 +447,10 @@ class TeamsDownloaderGUI:
         
         index = selection[0]
         self.current_class_index = index
+        
+        # 特定学生選択モードをリセット
+        self.selected_students_mode = False
+        self.selected_students_list = None
         
         classes = self.assignment_service.get_classes()
         selected_class = classes[index]
@@ -484,6 +567,100 @@ class TeamsDownloaderGUI:
             if search_text in assignment.lower():
                 self.assignment_listbox.insert(tk.END, assignment)
     
+    def check_unsubmitted(self):
+        """未提出者を確認（新機能4）"""
+        if self.current_class_index is None:
+            messagebox.showwarning("警告", "クラスを選択してください")
+            return
+        
+        selection = self.assignment_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("警告", "課題を選択してください")
+            return
+        
+        assignment_name = self.assignment_listbox.get(selection[0])
+        classes = self.assignment_service.get_classes()
+        selected_class = classes[self.current_class_index]
+        
+        # 認証チェック
+        if not self.auth_manager.access_token:
+            if not self.authenticate_with_gui():
+                return
+        
+        # バックグラウンドで未提出者を取得
+        def fetch_unsubmitted():
+            try:
+                unsubmitted_list, error = self.download_service.get_unsubmitted_students(
+                    selected_class,
+                    assignment_name,
+                    progress_callback=self.log
+                )
+                
+                if error:
+                    self.root.after(0, lambda: messagebox.showerror("エラー", error))
+                    return
+                
+                # UIスレッドでダイアログを表示
+                def show_dialog():
+                    if unsubmitted_list:
+                        UnsubmittedStudentsDialog(
+                            self.root,
+                            selected_class['name'],
+                            assignment_name,
+                            unsubmitted_list
+                        )
+                    else:
+                        messagebox.showinfo(
+                            "確認完了",
+                            f"未提出者はいません！\n全員提出済みです。"
+                        )
+                
+                self.root.after(0, show_dialog)
+                
+            except Exception as e:
+                error_msg = f"❌ 未提出者確認エラー: {str(e)}"
+                self.log(error_msg)
+                self.root.after(0, lambda: messagebox.showerror("エラー", error_msg))
+        
+        # スレッドで実行
+        thread = threading.Thread(target=fetch_unsubmitted)
+        thread.daemon = True
+        thread.start()
+    
+    def select_specific_students(self):
+        """特定学生を選択（新機能5）"""
+        students_info = self.assignment_cache.get_students_info()
+        
+        if not students_info:
+            messagebox.showwarning(
+                "警告",
+                "学生情報が見つかりません。\nstudents.csv または students.xlsx を配置してください。"
+            )
+            return
+        
+        # 学生選択ダイアログを表示
+        dialog = SelectStudentsDialog(self.root, students_info)
+        selected_students = dialog.show()
+        
+        if selected_students:
+            self.selected_students_mode = True
+            self.selected_students_list = selected_students
+            self.log(f"👥 特定学生選択モード: {len(selected_students)}人を選択")
+            
+            # ダウンロードボタンのテキストを変更
+            self.download_button.config(text=f"📥 DL({len(selected_students)})")
+            
+            messagebox.showinfo(
+                "選択完了",
+                f"{len(selected_students)}人を選択しました。\n\n次のダウンロードは選択した学生のみが対象になります。\n\n再度 👥 ボタンを押すと解除できます。"
+            )
+        else:
+            # 選択解除
+            self.selected_students_mode = False
+            self.selected_students_list = None
+            self.download_button.config(text="📥 DL")
+            self.log("👥 特定学生選択モードを解除")
+    
     def download_selected_assignment(self):
         """選択された課題をダウンロード"""
         # 既にダウンロード中の場合は何もしない
@@ -557,12 +734,16 @@ class TeamsDownloaderGUI:
                 )
                 return dialog.show()
             
+            # 特定学生選択モードの場合は選択した学生のみダウンロード
+            selected_students = self.selected_students_list if self.selected_students_mode else None
+            
             download_count, student_count = self.download_service.download_assignment(
                 selected_class,
                 assignment_name,
                 output_folder,
                 progress_callback=self.log,
-                class_code_dialog_callback=class_code_dialog_callback
+                class_code_dialog_callback=class_code_dialog_callback,
+                selected_students=selected_students
             )
             
             if not self.download_service.cancelled and student_count > 0:
@@ -599,6 +780,23 @@ class TeamsDownloaderGUI:
             self.device_code_dialog = None
         
         return result
+    
+    def show_font_settings(self):
+        """フォント設定を表示（新機能2）"""
+        current_size = self.assignment_cache.get_font_size()
+        
+        dialog = FontSettingsDialog(self.root, current_size)
+        new_size = dialog.show()
+        
+        if new_size and new_size != current_size:
+            # 設定を保存
+            self.assignment_cache.set_font_size(new_size)
+            self.log(f"🔤 フォントサイズを変更しました: {new_size}")
+            
+            messagebox.showinfo(
+                "設定完了",
+                "フォントサイズを変更しました。\n\n変更を適用するには、アプリケーションを再起動してください。"
+            )
     
     def clear_cache(self):
         """キャッシュをクリア"""
@@ -662,7 +860,7 @@ class TeamsDownloaderGUI:
                 if result['assignments']:
                     # 課題キャッシュをクリア
                     keys_to_delete = [k for k in self.assignment_cache.cache_data.keys() 
-                                     if not k.startswith('students_') and not k.startswith('class_selection_')]
+                                     if not k.startswith('students_') and not k.startswith('class_selection_') and k not in ['font_size', '_cache_version', 'multi_class_students']]
                     for key in keys_to_delete:
                         del self.assignment_cache.cache_data[key]
                     cleared.append("課題一覧キャッシュ")

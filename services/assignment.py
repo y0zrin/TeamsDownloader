@@ -56,6 +56,30 @@ class AssignmentService:
         self.save_config()
         return True, f"✅ {class_name} を追加しました"
     
+    def edit_class(self, index, new_class_name):
+        """クラスを編集（新機能）"""
+        if not (0 <= index < len(self.config["classes"])):
+            return False, "❌ 無効な番号です"
+        
+        # 同じ名前がすでに存在するかチェック（自分以外）
+        for i, cls in enumerate(self.config["classes"]):
+            if i != index and cls["name"] == new_class_name:
+                return False, f"{new_class_name} は既に登録されています"
+        
+        old_name = self.config["classes"][index]["name"]
+        
+        # SharePointサイトURLを更新
+        site_url = f"https://nkzacjp.sharepoint.com/sites/{new_class_name}"
+        
+        self.config["classes"][index] = {
+            "name": new_class_name,
+            "site_url": site_url,
+            "site_path": f"/sites/{new_class_name}"
+        }
+        
+        self.save_config()
+        return True, f"✅ {old_name} を {new_class_name} に変更しました"
+    
     def delete_class(self, index):
         """クラスを削除"""
         if 0 <= index < len(self.config["classes"]):

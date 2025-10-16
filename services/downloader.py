@@ -24,9 +24,117 @@ class DownloadService:
         """キャンセルフラグをリセット"""
         self.cancelled = False
     
+    def get_unsubmitted_students(self, class_config, assignment_name, progress_callback=None):
+        """未提出者を取得（新機能4）
+        
+        Returns:
+            tuple: (未提出者リスト, エラーメッセージ)
+        """
+        def log(msg):
+            if progress_callback:
+                progress_callback(msg)
+            else:
+                print(msg)
+        
+        log(f"\n{'='*50}")
+        log(f"📊 未提出者確認: {assignment_name}")
+        log(f"{'='*50}")
+        
+        # サイトIDとドライブIDを取得
+        site_id = self.api_client.get_site_id(class_config["site_path"])
+        if not site_id:
+            return [], "❌ サイトIDの取得に失敗"
+        
+        drive_id, drive_name = self.api_client.get_drive_id(site_id)
+        if not drive_id:
+            return [], "❌ ドライブIDの取得に失敗"
+        
+        # ベースフォルダを設定
+        if drive_name == "Student Work":
+            base_folder = "Working files"
+        else:
+            base_folder = "Student Work/Working files"
+        
+        # 学生情報を取得
+        students_info = self.cache.get_students_info()
+        if not students_info:
+            return [], "❌ 学生情報が見つかりません（students.csv/xlsxを配置してください）"
+        
+        # 学生リストをキャッシュから取得
+        cached_students_list, _ = self.cache.get_students_list(class_config['name'])
+        
+        if not cached_students_list:
+            # キャッシュがない場合はスキャン
+            log("🔍 学生フォルダをスキャン中...")
+            cached_students_list = []
+            student_folders = self.api_client.get_student_folders(drive_id, base_folder)
+            for student_folder in student_folders:
+                cached_students_list.append({
+                    'name': student_folder['name'],
+                    'id': student_folder['id']
+                })
+        
+        # 提出者を検出
+        submitted_students = set()
+        for student in cached_students_list:
+            if self.cancelled:
+                return [], "キャンセルされました"
+            
+            student_name = student['name']
+            student_path = f"{base_folder}/{student_name}"
+            
+            # 学生フォルダ内の課題をチェック
+            assignment_folders = self.api_client.get_assignment_folders(drive_id, student_path)
+            
+            for assignment_folder in assignment_folders:
+                folder_name = assignment_folder["name"]
+                search_name = assignment_name.replace('/', '_')
+                
+                if search_name.lower() in folder_name.lower():
+                    # 提出済みとしてマーク
+                    cleaned_name = clean_student_name(student_name)
+                    submitted_students.add(cleaned_name)
+                    break
+        
+        log(f"✅ {len(submitted_students)}人が提出済み")
+        
+        # 名簿から未提出者を抽出
+        unsubmitted = []
+        multi_class_students = self.cache.get_multi_class_students()
+        
+        for name_key, info in students_info.items():
+            if name_key not in submitted_students:
+                # 複数クラス記号を持つ学生の処理
+                if isinstance(info, list):
+                    for student_info in info:
+                        unsubmitted.append(student_info)
+                else:
+                    unsubmitted.append(info)
+        
+        # クラス記号でフィルタリング（現在のクラスに所属する学生のみ）
+        class_name = class_config['name']
+        filtered_unsubmitted = []
+        
+        for student_info in unsubmitted:
+            # クラス名からクラス記号を推定（例: OHC25-AT12B543 → AT12B543）
+            class_code_suffix = class_name.split('-')[-1] if '-' in class_name else class_name
+            student_class_code = student_info.get('class_code', '')
+            
+            # 部分一致で判定（最初の4文字が一致すれば同じクラスとみなす）
+            if student_class_code[:4] == class_code_suffix[:4]:
+                filtered_unsubmitted.append(student_info)
+        
+        # 出席番号順にソート
+        filtered_unsubmitted.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
+        
+        log(f"📋 未提出者: {len(filtered_unsubmitted)}人")
+        
+        return filtered_unsubmitted, None
+    
     def download_assignment(self, class_config, assignment_name, output_base_dir, 
-                           progress_callback=None, class_code_dialog_callback=None):
-        """課題をダウンロード
+                           progress_callback=None, class_code_dialog_callback=None,
+                           selected_students=None):
+        """課題をダウンロード（機能5: 特定学生選択対応）
         
         Args:
             class_config: クラス設定
@@ -34,6 +142,7 @@ class DownloadService:
             output_base_dir: 出力ベースディレクトリ
             progress_callback: 進捗コールバック関数
             class_code_dialog_callback: クラス記号選択ダイアログコールバック
+            selected_students: 特定の学生のみダウンロードする場合の学生名リスト（新機能5）
         
         Returns:
             tuple: (成功数, 学生数)
@@ -47,7 +156,10 @@ class DownloadService:
                 print(msg)
         
         log(f"\n{'='*50}")
-        log(f"📥 課題ダウンロード開始: {assignment_name}")
+        if selected_students:
+            log(f"📥 課題ダウンロード開始（特定学生のみ）: {assignment_name}")
+        else:
+            log(f"📥 課題ダウンロード開始: {assignment_name}")
         log(f"{'='*50}")
         
         # 出力フォルダを準備
@@ -85,6 +197,16 @@ class DownloadService:
         # 学生リストをキャッシュから取得
         cached_students_list, cache_updated = self.cache.get_students_list(class_config['name'])
         
+        # 特定学生フィルタのセットを作成
+        selected_students_set = None
+        if selected_students:
+            selected_students_set = set()
+            for student_name in selected_students:
+                # 名簿上の名前をクリーンにしてセットに追加
+                cleaned = clean_student_name(student_name)
+                selected_students_set.add(cleaned)
+            log(f"🎯 ダウンロード対象: {len(selected_students_set)}人")
+        
         student_data_list = []
         matched_count = 0
         unmatched_students = []
@@ -100,6 +222,13 @@ class DownloadService:
                     return 0, 0
                 
                 student_name = student['name']
+                
+                # 特定学生フィルタが有効な場合、対象外ならスキップ
+                if selected_students_set:
+                    cleaned_name = clean_student_name(student_name)
+                    if cleaned_name not in selected_students_set:
+                        continue
+                
                 student_id = student['id']
                 student_path = f"{base_folder}/{student_name}"
                 
@@ -148,6 +277,13 @@ class DownloadService:
                     return 0, 0
                 
                 student_name = student_folder["name"]
+                
+                # 特定学生フィルタが有効な場合、対象外ならスキップ
+                if selected_students_set:
+                    cleaned_name = clean_student_name(student_name)
+                    if cleaned_name not in selected_students_set:
+                        continue
+                
                 student_path = f"{base_folder}/{student_name}"
                 
                 assignment_folders = self.api_client.get_assignment_folders(drive_id, student_path)

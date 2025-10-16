@@ -71,6 +71,10 @@ def check_drm_protection(filepath):
 
 
 def clean_student_name(name):
-    """SharePoint側の学生名からOHSプレフィックスを削除してキーを作成"""
-    cleaned = re.sub(r'^OHS\d+\s+', '', name)
-    return cleaned.replace(' ', '').replace('　', '').strip()
+    """学生名を正規化してキーを作成（氏名のみで照合）
+    
+    変更点: プレフィックス（OHS数字など）の削除処理を削除し、
+            氏名のみでマッチングするように変更
+    """
+    # スペース・全角スペースを削除して正規化
+    return str(name).replace(' ', '').replace('　', '').strip()

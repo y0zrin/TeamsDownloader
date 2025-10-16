@@ -11,8 +11,20 @@ from utils.crypto import ENCRYPTION_AVAILABLE, encrypt_data, decrypt_data
 from core.students import load_students_info
 
 
+# フォントサイズの定義（5段階）
+FONT_SIZES = {
+    'smallest': {'ui': 8, 'log': 7, 'list': 9},
+    'small': {'ui': 9, 'log': 8, 'list': 10},      # デフォルト（現在の状態）
+    'medium': {'ui': 10, 'log': 9, 'list': 11},
+    'large': {'ui': 11, 'log': 10, 'list': 12},
+    'largest': {'ui': 12, 'log': 11, 'list': 13},
+}
+
+DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態
+
+
 class AssignmentCache:
-    """課題一覧のキャッシュ管理(増分更新対応・暗号化対応)"""
+    """課題一覧のキャッシュ管理(増分更新対応・暗号化対応・設定保存対応)"""
     
     def __init__(self, cache_file="assignments_cache.json", cache_hours=24):
         self.cache_file = cache_file
@@ -296,3 +308,22 @@ class AssignmentCache:
         except Exception as e:
             print(f"複数クラスキャッシュ構築エラー: {e}")
             return {}
+    
+    # ========== 新機能2: フォントサイズ設定 ==========
+    
+    def get_font_size(self):
+        """フォントサイズ設定を取得"""
+        return self.cache_data.get('font_size', DEFAULT_FONT_SIZE)
+    
+    def set_font_size(self, size):
+        """フォントサイズ設定を保存"""
+        if size in FONT_SIZES:
+            self.cache_data['font_size'] = size
+            self.save_cache()
+            return True
+        return False
+    
+    def get_font_config(self):
+        """現在のフォント設定を取得"""
+        size_key = self.get_font_size()
+        return FONT_SIZES.get(size_key, FONT_SIZES[DEFAULT_FONT_SIZE])

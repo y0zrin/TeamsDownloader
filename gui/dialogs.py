@@ -184,7 +184,7 @@ class ClassCodeSelectionDialog:
         
         # ボタン
         button_frame = ttk.Frame(self.dialog)
-        button_frame.pack(pady=10)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
         
         ttk.Button(
             button_frame,
@@ -195,7 +195,7 @@ class ClassCodeSelectionDialog:
         
         ttk.Button(
             button_frame,
-            text="スキップ",
+            text="キャンセル",
             command=self._on_skip,
             width=12
         ).pack(side=tk.LEFT, padx=5)
@@ -217,3 +217,511 @@ class ClassCodeSelectionDialog:
     def show(self):
         self.dialog.wait_window()
         return self.selected_code
+
+
+# ========== 新機能1: クラス編集ダイアログ ==========
+
+class EditClassDialog:
+    """クラス編集ダイアログ"""
+    def __init__(self, parent, current_name):
+        self.new_name = None
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("クラス編集")
+        self.dialog.geometry("380x200")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 190
+        y = (self.dialog.winfo_screenheight() // 2) - 100
+        self.dialog.geometry(f"380x200+{x}+{y}")
+        
+        # メインフレーム
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 説明
+        ttk.Label(
+            main_frame,
+            text=f"現在のクラス名: {current_name}",
+            font=("", 10, "bold")
+        ).pack(pady=(0, 10))
+        
+        ttk.Label(
+            main_frame,
+            text="新しいクラス名を入力してください:"
+        ).pack(pady=(0, 5))
+        
+        # 入力欄
+        self.entry = ttk.Entry(main_frame, width=35)
+        self.entry.pack(pady=5)
+        self.entry.insert(0, current_name)
+        self.entry.focus()
+        self.entry.select_range(0, tk.END)
+        
+        # Enterキーでも確定
+        self.entry.bind('<Return>', lambda e: self._on_ok())
+        
+        # ボタン
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
+        
+        ttk.Button(
+            button_frame,
+            text="OK",
+            command=self._on_ok,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+    
+    def _on_ok(self):
+        self.new_name = self.entry.get().strip()
+        self.dialog.destroy()
+    
+    def _on_cancel(self):
+        self.new_name = None
+        self.dialog.destroy()
+    
+    def show(self):
+        self.dialog.wait_window()
+        return self.new_name
+
+
+# ========== 新機能4: 未提出者一覧ダイアログ ==========
+
+class UnsubmittedStudentsDialog:
+    """未提出者一覧ダイアログ"""
+    def __init__(self, parent, class_name, assignment_name, unsubmitted_list):
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("未提出者一覧")
+        self.dialog.geometry("600x500")
+        self.dialog.transient(parent)
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 300
+        y = (self.dialog.winfo_screenheight() // 2) - 250
+        self.dialog.geometry(f"600x500+{x}+{y}")
+        
+        # タイトル
+        title_frame = ttk.Frame(self.dialog, padding="10")
+        title_frame.pack(fill=tk.X)
+        
+        ttk.Label(
+            title_frame,
+            text=f"📊 未提出者一覧",
+            font=("", 14, "bold")
+        ).pack()
+        
+        ttk.Label(
+            title_frame,
+            text=f"クラス: {class_name} | 課題: {assignment_name}",
+            font=("", 10)
+        ).pack(pady=5)
+        
+        ttk.Label(
+            title_frame,
+            text=f"未提出者: {len(unsubmitted_list)}人",
+            foreground="red",
+            font=("", 10, "bold")
+        ).pack()
+        
+        # リストフレーム
+        list_frame = ttk.Frame(self.dialog, padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # スクロールバー
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # リストボックス
+        self.listbox = tk.Listbox(
+            list_frame,
+            yscrollcommand=scrollbar.set,
+            font=("", 10),
+            selectmode=tk.EXTENDED
+        )
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.listbox.yview)
+        
+        # 未提出者をリストに追加
+        for student_info in unsubmitted_list:
+            class_code = student_info.get('class_code', '')
+            attendance_num = student_info.get('attendance_number', '')
+            name = student_info.get('student_name', student_info.get('name', ''))
+            
+            try:
+                num_str = f"{int(attendance_num):02d}"
+            except:
+                num_str = str(attendance_num)
+            
+            display_text = f"[{class_code}] {num_str} {name}"
+            self.listbox.insert(tk.END, display_text)
+        
+        # ボタンフレーム
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
+        
+        ttk.Button(
+            button_frame,
+            text="📋 コピー",
+            command=self._copy_to_clipboard,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="閉じる",
+            command=self.dialog.destroy,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+    
+    def _copy_to_clipboard(self):
+        """リスト内容をクリップボードにコピー"""
+        items = self.listbox.get(0, tk.END)
+        text = '\n'.join(items)
+        
+        try:
+            if CLIPBOARD_AVAILABLE:
+                import pyperclip
+                pyperclip.copy(text)
+            else:
+                self.dialog.clipboard_clear()
+                self.dialog.clipboard_append(text)
+            
+            # 一時的にボタンのテキストを変更
+            for widget in self.dialog.winfo_children():
+                if isinstance(widget, ttk.Frame):
+                    for button in widget.winfo_children():
+                        if isinstance(button, ttk.Button) and button.cget('text') == '📋 コピー':
+                            button.configure(text='✓ コピー済み')
+                            self.dialog.after(2000, lambda: button.configure(text='📋 コピー'))
+                            break
+        except Exception as e:
+            print(f"クリップボードへのコピーエラー: {e}")
+
+
+# ========== 新機能5: 特定学生選択ダイアログ ==========
+
+class SelectStudentsDialog:
+    """特定学生選択ダイアログ"""
+    def __init__(self, parent, students_info):
+        self.selected_students = None
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("ダウンロード対象学生を選択")
+        self.dialog.geometry("500x620")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 250
+        y = (self.dialog.winfo_screenheight() // 2) - 310
+        self.dialog.geometry(f"500x620+{x}+{y}")
+        
+        # タイトル
+        title_frame = ttk.Frame(self.dialog, padding="10")
+        title_frame.pack(fill=tk.X)
+        
+        ttk.Label(
+            title_frame,
+            text="📥 ダウンロード対象学生を選択",
+            font=("", 12, "bold")
+        ).pack()
+        
+        ttk.Label(
+            title_frame,
+            text="Ctrl/Shiftキーで複数選択できます",
+            font=("", 9),
+            foreground="gray"
+        ).pack(pady=5)
+        
+        # 検索バー
+        search_frame = ttk.Frame(self.dialog, padding="10")
+        search_frame.pack(fill=tk.X)
+        
+        ttk.Label(search_frame, text="🔍").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.search_var.trace('w', self._filter_list)
+        
+        # リストフレーム
+        list_frame = ttk.Frame(self.dialog, padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # スクロールバー
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # リストボックス
+        self.listbox = tk.Listbox(
+            list_frame,
+            yscrollcommand=scrollbar.set,
+            font=("", 10),
+            selectmode=tk.EXTENDED
+        )
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.listbox.yview)
+        
+        # 学生情報を格納
+        self.all_students = []
+        
+        # 学生情報からリストを作成
+        if students_info:
+            for name_key, info in students_info.items():
+                if isinstance(info, list):
+                    # 複数クラス記号を持つ学生
+                    for student_info in info:
+                        self.all_students.append(student_info)
+                else:
+                    self.all_students.append(info)
+            
+            # ソート
+            self.all_students.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
+        
+        # リストに追加
+        self._populate_list()
+        
+        # 選択ボタン
+        selection_frame = ttk.Frame(self.dialog, padding="5")
+        selection_frame.pack(fill=tk.X)
+        
+        ttk.Button(
+            selection_frame,
+            text="全選択",
+            command=self._select_all,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            selection_frame,
+            text="選択解除",
+            command=self._deselect_all,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 確認ボタン
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
+        
+        self.count_label = ttk.Label(
+            button_frame,
+            text="0人選択中",
+            font=("", 9),
+            foreground="blue"
+        )
+        self.count_label.pack(side=tk.LEFT, padx=10)
+        
+        ttk.Button(
+            button_frame,
+            text="OK",
+            command=self._on_ok,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # 選択変更イベント
+        self.listbox.bind('<<ListboxSelect>>', self._on_selection_changed)
+    
+    def _populate_list(self, students=None):
+        """リストを更新"""
+        self.listbox.delete(0, tk.END)
+        
+        if students is None:
+            students = self.all_students
+        
+        for student_info in students:
+            class_code = student_info.get('class_code', '')
+            attendance_num = student_info.get('attendance_number', '')
+            name = student_info.get('student_name', student_info.get('name', ''))
+            
+            try:
+                num_str = f"{int(attendance_num):02d}"
+            except:
+                num_str = str(attendance_num)
+            
+            display_text = f"[{class_code}] {num_str} {name}"
+            self.listbox.insert(tk.END, display_text)
+    
+    def _filter_list(self, *args):
+        """検索フィルタ"""
+        search_text = self.search_var.get().lower()
+        
+        if not search_text:
+            self._populate_list()
+            return
+        
+        filtered = [s for s in self.all_students 
+                   if search_text in s.get('student_name', '').lower() or
+                      search_text in s.get('class_code', '').lower() or
+                      search_text in str(s.get('attendance_number', '')).lower()]
+        
+        self._populate_list(filtered)
+    
+    def _select_all(self):
+        """全選択"""
+        self.listbox.select_set(0, tk.END)
+        self._on_selection_changed()
+    
+    def _deselect_all(self):
+        """選択解除"""
+        self.listbox.selection_clear(0, tk.END)
+        self._on_selection_changed()
+    
+    def _on_selection_changed(self, event=None):
+        """選択変更時"""
+        count = len(self.listbox.curselection())
+        self.count_label.config(text=f"{count}人選択中")
+    
+    def _on_ok(self):
+        """OK押下"""
+        selected_indices = self.listbox.curselection()
+        
+        if not selected_indices:
+            self.selected_students = None
+        else:
+            self.selected_students = []
+            for idx in selected_indices:
+                # 現在表示されているリストから該当する学生情報を取得
+                display_text = self.listbox.get(idx)
+                
+                # 表示テキストから学生情報を逆引き
+                for student_info in self.all_students:
+                    class_code = student_info.get('class_code', '')
+                    attendance_num = student_info.get('attendance_number', '')
+                    name = student_info.get('student_name', student_info.get('name', ''))
+                    
+                    try:
+                        num_str = f"{int(attendance_num):02d}"
+                    except:
+                        num_str = str(attendance_num)
+                    
+                    expected_text = f"[{class_code}] {num_str} {name}"
+                    
+                    if expected_text == display_text:
+                        self.selected_students.append(name)
+                        break
+        
+        self.dialog.destroy()
+    
+    def _on_cancel(self):
+        """キャンセル押下"""
+        self.selected_students = None
+        self.dialog.destroy()
+    
+    def show(self):
+        """ダイアログを表示して結果を返す"""
+        self.dialog.wait_window()
+        return self.selected_students
+
+
+# ========== 新機能2: フォント設定ダイアログ ==========
+
+class FontSettingsDialog:
+    """フォント設定ダイアログ"""
+    def __init__(self, parent, current_size):
+        self.selected_size = None
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("フォント設定")
+        self.dialog.geometry("380x420")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 190
+        y = (self.dialog.winfo_screenheight() // 2) - 210
+        self.dialog.geometry(f"380x420+{x}+{y}")
+        
+        # メインフレーム
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # タイトル
+        ttk.Label(
+            main_frame,
+            text="🔤 フォントサイズ設定",
+            font=("", 12, "bold")
+        ).pack(pady=(0, 15))
+        
+        ttk.Label(
+            main_frame,
+            text="フォントサイズを選択してください:",
+            font=("", 10)
+        ).pack(pady=(0, 10))
+        
+        # ラジオボタンフレーム
+        radio_frame = ttk.Frame(main_frame)
+        radio_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # ラジオボタン
+        self.size_var = tk.StringVar(value=current_size)
+        
+        size_options = [
+            ('smallest', '最小 (8pt)'),
+            ('small', '小 (9pt) - デフォルト'),
+            ('medium', '中 (10pt)'),
+            ('large', '大 (11pt)'),
+            ('largest', '最大 (12pt)'),
+        ]
+        
+        for value, label in size_options:
+            ttk.Radiobutton(
+                radio_frame,
+                text=label,
+                value=value,
+                variable=self.size_var
+            ).pack(anchor=tk.W, padx=20, pady=5)
+        
+        # ヒント
+        ttk.Label(
+            main_frame,
+            text="※ 変更を適用するにはアプリの再起動が必要です",
+            font=("", 8),
+            foreground="gray"
+        ).pack(pady=(15, 0))
+        
+        # ボタン
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
+        
+        ttk.Button(
+            button_frame,
+            text="適用",
+            command=self._on_ok,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+    
+    def _on_ok(self):
+        self.selected_size = self.size_var.get()
+        self.dialog.destroy()
+    
+    def _on_cancel(self):
+        self.selected_size = None
+        self.dialog.destroy()
+    
+    def show(self):
+        self.dialog.wait_window()
+        return self.selected_size
