@@ -11,13 +11,13 @@ from utils.crypto import ENCRYPTION_AVAILABLE, encrypt_data, decrypt_data
 from core.students import load_students_info
 
 
-# フォントサイズの定義（5段階）
+# フォントサイズの定義（5段階） - 変化を大きく調整
 FONT_SIZES = {
-    'smallest': {'ui': 8, 'log': 7, 'list': 9},
-    'small': {'ui': 9, 'log': 8, 'list': 10},      # デフォルト（現在の状態）
-    'medium': {'ui': 10, 'log': 9, 'list': 11},
-    'large': {'ui': 11, 'log': 10, 'list': 12},
-    'largest': {'ui': 12, 'log': 11, 'list': 13},
+    'smallest': {'ui': 8, 'log': 7, 'list': 9},    # 最小はそのまま
+    'small': {'ui': 10, 'log': 9, 'list': 11},     # デフォルト（+1）
+    'medium': {'ui': 12, 'log': 11, 'list': 13},   # 中（+2）
+    'large': {'ui': 14, 'log': 13, 'list': 15},    # 大（+2）
+    'largest': {'ui': 16, 'log': 15, 'list': 17},  # 最大（+2）
 }
 
 DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態

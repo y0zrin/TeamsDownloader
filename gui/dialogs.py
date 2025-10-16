@@ -638,15 +638,15 @@ class FontSettingsDialog:
         self.selected_size = None
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("フォント設定")
-        self.dialog.geometry("380x420")
+        self.dialog.geometry("380x350")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # センタリング
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() // 2) - 190
-        y = (self.dialog.winfo_screenheight() // 2) - 210
-        self.dialog.geometry(f"380x420+{x}+{y}")
+        y = (self.dialog.winfo_screenheight() // 2) - 175
+        self.dialog.geometry(f"380x350+{x}+{y}")
         
         # メインフレーム
         main_frame = ttk.Frame(self.dialog, padding="20")
@@ -687,14 +687,6 @@ class FontSettingsDialog:
                 value=value,
                 variable=self.size_var
             ).pack(anchor=tk.W, padx=20, pady=5)
-        
-        # ヒント
-        ttk.Label(
-            main_frame,
-            text="※ 変更を適用するにはアプリの再起動が必要です",
-            font=("", 8),
-            foreground="gray"
-        ).pack(pady=(15, 0))
         
         # ボタン
         button_frame = ttk.Frame(self.dialog)

@@ -21,6 +21,64 @@ from gui.dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog,
                          SelectStudentsDialog, FontSettingsDialog)
 
 
+class ToolTip:
+    """ツールチップ（マウスオーバーで表示されるヘルプテキスト）"""
+    def __init__(self, widget, text, delay=500):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip_window = None
+        self.schedule_id = None
+        
+        self.widget.bind("<Enter>", self.on_enter)
+        self.widget.bind("<Leave>", self.on_leave)
+        self.widget.bind("<Button>", self.on_leave)
+    
+    def on_enter(self, event=None):
+        """マウスが入った時"""
+        self.schedule_id = self.widget.after(self.delay, self.show_tooltip)
+    
+    def on_leave(self, event=None):
+        """マウスが出た時"""
+        if self.schedule_id:
+            self.widget.after_cancel(self.schedule_id)
+            self.schedule_id = None
+        self.hide_tooltip()
+    
+    def show_tooltip(self):
+        """ツールチップを表示"""
+        if self.tooltip_window:
+            return
+        
+        # マウス位置を取得
+        x = self.widget.winfo_pointerx() + 10
+        y = self.widget.winfo_pointery() + 10
+        
+        # ツールチップウィンドウを作成
+        self.tooltip_window = tk.Toplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        # ラベルを作成
+        label = tk.Label(
+            self.tooltip_window,
+            text=self.text,
+            background="#ffffe0",
+            relief=tk.SOLID,
+            borderwidth=1,
+            font=("", 9),
+            padx=5,
+            pady=3
+        )
+        label.pack()
+    
+    def hide_tooltip(self):
+        """ツールチップを非表示"""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
+
 class TextRedirector:
     """標準出力をテキストウィジェットにリダイレクト"""
     def __init__(self, widget, tag="stdout"):
@@ -123,10 +181,10 @@ class TeamsDownloaderGUI:
         # キャッシュの暗号化状態を表示
         from utils.crypto import ENCRYPTION_AVAILABLE
         if ENCRYPTION_AVAILABLE:
-            self.log("💾 キャッシュ機能が有効(有効期限: 24時間)")
+            self.log("💾 キャッシュ機能が有効（手動更新まで有効）")
             self.log("🔒 キャッシュは暗号化されています")
         else:
-            self.log("💾 キャッシュ機能が有効(有効期限: 24時間)")
+            self.log("💾 キャッシュ機能が有効（手動更新まで有効）")
             self.log("⚠️  暗号化ライブラリ未導入 - キャッシュは平文で保存されます")
             self.log("   (pip install cryptography で暗号化を有効化できます)")
         self.log("")
@@ -181,49 +239,52 @@ class TeamsDownloaderGUI:
         button_row1 = ttk.Frame(button_frame)
         button_row1.pack(fill=tk.X, pady=(0, 2))
         
-        ttk.Button(
+        add_btn = ttk.Button(
             button_row1,
             text="➕ 追加",
             command=self.add_class
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        )
+        add_btn.pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ToolTip(add_btn, "新しいクラスを追加")
         
-        ttk.Button(
+        edit_btn = ttk.Button(
             button_row1,
             text="✏️ 編集",
             command=self.edit_class
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        )
+        edit_btn.pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ToolTip(edit_btn, "選択したクラス名を編集")
         
-        ttk.Button(
+        delete_btn = ttk.Button(
             button_row1,
             text="🗑️ 削除",
             command=self.delete_class
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        )
+        delete_btn.pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ToolTip(delete_btn, "選択したクラスを削除")
         
         # 2行目のボタン
         button_row2 = ttk.Frame(button_frame)
-        button_row2.pack(fill=tk.X, pady=(0, 2))
+        button_row2.pack(fill=tk.X)
         
-        ttk.Button(
+        structure_btn = ttk.Button(
             button_row2,
             text="📁 構造",
             command=self.debug_folder_structure
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        )
+        structure_btn.pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ToolTip(structure_btn, "SharePointのフォルダ構造を確認")
         
-        ttk.Button(
+        settings_btn = ttk.Button(
             button_row2,
-            text="🧹 キャッシュ",
-            command=self.clear_cache
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+            text="⚙️ 設定",
+            command=self.show_settings_menu
+        )
+        settings_btn.pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ToolTip(settings_btn, "設定メニューを開く")
         
-        # 3行目のボタン（新機能2: フォント設定）
-        button_row3 = ttk.Frame(button_frame)
-        button_row3.pack(fill=tk.X)
-        
-        ttk.Button(
-            button_row3,
-            text="🔤 フォント",
-            command=self.show_font_settings
-        ).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        # 設定メニュー用の参照を保持
+        self.settings_button = settings_btn
         
         # クラスリスト
         list_frame = ttk.Frame(parent)
@@ -270,29 +331,36 @@ class TeamsDownloaderGUI:
         self.search_entry = ttk.Entry(control_frame, textvariable=self.search_var)
         self.search_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
         self.search_var.trace('w', self.filter_assignments)
+        ToolTip(self.search_entry, "課題名で絞り込み検索")
         
-        ttk.Button(
+        refresh_btn = ttk.Button(
             control_frame,
             text="🔄",
             command=self.refresh_assignments,
             width=3
-        ).grid(row=0, column=2, padx=(0, 2))
+        )
+        refresh_btn.grid(row=0, column=2, padx=(0, 2))
+        ToolTip(refresh_btn, "最新の課題一覧を取得")
         
         # 新機能4: 未提出者確認ボタン
-        ttk.Button(
+        unsubmitted_btn = ttk.Button(
             control_frame,
             text="📊",
             command=self.check_unsubmitted,
             width=3
-        ).grid(row=0, column=3, padx=(0, 2))
+        )
+        unsubmitted_btn.grid(row=0, column=3, padx=(0, 2))
+        ToolTip(unsubmitted_btn, "未提出者を確認")
         
         # 新機能5: 特定学生選択ボタン
-        ttk.Button(
+        select_students_btn = ttk.Button(
             control_frame,
             text="👥",
             command=self.select_specific_students,
             width=3
-        ).grid(row=0, column=4, padx=(0, 5))
+        )
+        select_students_btn.grid(row=0, column=4, padx=(0, 5))
+        ToolTip(select_students_btn, "特定の学生を選択してダウンロード")
         
         self.download_button = ttk.Button(
             control_frame,
@@ -301,6 +369,7 @@ class TeamsDownloaderGUI:
             width=8
         )
         self.download_button.grid(row=0, column=5, padx=(0, 2))
+        ToolTip(self.download_button, "選択した課題をダウンロード")
         
         self.cancel_button = ttk.Button(
             control_frame,
@@ -310,6 +379,7 @@ class TeamsDownloaderGUI:
             state='disabled'
         )
         self.cancel_button.grid(row=0, column=6)
+        ToolTip(self.cancel_button, "ダウンロードをキャンセル")
         
         # 課題リスト
         list_frame = ttk.Frame(parent)
@@ -332,13 +402,13 @@ class TeamsDownloaderGUI:
         self.assignment_listbox.bind('<Double-Button-1>', lambda e: self.download_selected_assignment())
         
         # ヒント
-        hint_label = ttk.Label(
+        self.hint_label = ttk.Label(
             parent,
             text="💡 W-Click: DL | 📊: 未提出者 | 👥: 特定学生選択",
             foreground="gray",
             font=("", self.font_config['ui'] - 1)
         )
-        hint_label.grid(row=3, column=0, pady=(5, 0))
+        self.hint_label.grid(row=3, column=0, pady=(5, 0))
         
         # キーボードショートカット(Shift+Delも維持)
         self.root.bind('<Shift-Delete>', lambda e: self.clear_cache())
@@ -350,6 +420,27 @@ class TeamsDownloaderGUI:
         # 特定学生選択モードのフラグと選択された学生リスト
         self.selected_students_mode = False
         self.selected_students_list = None
+    
+    def apply_font_settings(self):
+        """フォント設定を動的に適用（再起動不要）"""
+        self.font_config = self.assignment_cache.get_font_config()
+        
+        # ログエリアのフォント
+        self.log_text.configure(font=("Consolas", self.font_config['log']))
+        
+        # ステータスラベルのフォント
+        self.status_label.configure(font=("", self.font_config['ui']))
+        
+        # クラスリストのフォント
+        self.class_listbox.configure(font=("", self.font_config['list']))
+        
+        # 課題リストのフォント
+        self.assignment_listbox.configure(font=("", self.font_config['ui']))
+        
+        # ヒントラベルのフォント
+        self.hint_label.configure(font=("", self.font_config['ui'] - 1))
+        
+        self.log(f"✅ フォント設定を適用しました ({self.font_config['ui']}pt)")
     
     def log(self, message):
         """ログメッセージを表示"""
@@ -781,8 +872,43 @@ class TeamsDownloaderGUI:
         
         return result
     
+    def show_settings_menu(self):
+        """設定メニューを表示"""
+        # 設定ボタンの位置を取得
+        x = self.settings_button.winfo_rootx()
+        y = self.settings_button.winfo_rooty() + self.settings_button.winfo_height()
+        
+        # ポップアップメニューを作成
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
+        menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
+        
+        # メニューを表示
+        menu.post(x, y)
+    
+    def apply_font_settings(self):
+        """フォント設定を動的に適用(再起動不要)"""
+        self.font_config = self.assignment_cache.get_font_config()
+        
+        # ログエリアのフォント
+        self.log_text.configure(font=("Consolas", self.font_config['log']))
+        
+        # ステータスラベルのフォント
+        self.status_label.configure(font=("", self.font_config['ui']))
+        
+        # クラスリストのフォント
+        self.class_listbox.configure(font=("", self.font_config['list']))
+        
+        # 課題リストのフォント
+        self.assignment_listbox.configure(font=("", self.font_config['ui']))
+        
+        # ヒントラベルのフォント
+        self.hint_label.configure(font=("", self.font_config['ui'] - 1))
+        
+        self.log(f"✅ フォント設定を適用しました ({self.font_config['ui']}pt)")
+    
     def show_font_settings(self):
-        """フォント設定を表示（新機能2）"""
+        """フォント設定を表示（新機能2 - 再起動不要版）"""
         current_size = self.assignment_cache.get_font_size()
         
         dialog = FontSettingsDialog(self.root, current_size)
@@ -793,10 +919,8 @@ class TeamsDownloaderGUI:
             self.assignment_cache.set_font_size(new_size)
             self.log(f"🔤 フォントサイズを変更しました: {new_size}")
             
-            messagebox.showinfo(
-                "設定完了",
-                "フォントサイズを変更しました。\n\n変更を適用するには、アプリケーションを再起動してください。"
-            )
+            # 即座にフォントを適用
+            self.apply_font_settings()
     
     def clear_cache(self):
         """キャッシュをクリア"""

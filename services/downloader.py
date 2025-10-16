@@ -25,7 +25,7 @@ class DownloadService:
         self.cancelled = False
     
     def get_unsubmitted_students(self, class_config, assignment_name, progress_callback=None):
-        """未提出者を取得（新機能4）
+        """未提出者を取得（新機能4 - クラス単位で厳密にフィルタリング）
         
         Returns:
             tuple: (未提出者リスト, エラーメッセージ)
@@ -60,6 +60,46 @@ class DownloadService:
         if not students_info:
             return [], "❌ 学生情報が見つかりません（students.csv/xlsxを配置してください）"
         
+        # クラス名からクラスコードを抽出
+        class_name = class_config['name']
+        # 例: "OHC25-AT12B543" → "AT12B543"
+        if '-' in class_name:
+            target_class_code = class_name.split('-')[-1]
+        else:
+            target_class_code = class_name
+        
+        log(f"🎯 対象クラス: {class_name} (クラスコード: {target_class_code})")
+        
+        # 現在のクラスに所属する学生のみを抽出（厳密な一致）
+        current_class_students = {}
+        for name_key, info in students_info.items():
+            if isinstance(info, list):
+                # 複数クラス記号を持つ学生 - すべてチェック
+                for student_info in info:
+                    student_class_code = student_info.get('class_code', '')
+                    # 完全一致または前方一致（柔軟性を持たせる）
+                    if (student_class_code == target_class_code or 
+                        student_class_code.startswith(target_class_code[:6])):
+                        current_class_students[name_key] = student_info
+                        log(f"   📝 {student_info.get('student_name')} ({student_class_code}) を対象に追加")
+                        break
+            else:
+                # 単一クラス記号
+                student_class_code = info.get('class_code', '')
+                # 完全一致または前方一致
+                if (student_class_code == target_class_code or 
+                    student_class_code.startswith(target_class_code[:6])):
+                    current_class_students[name_key] = info
+                    log(f"   📝 {info.get('student_name')} ({student_class_code}) を対象に追加")
+        
+        log(f"📋 対象クラスの学生数: {len(current_class_students)}人")
+        
+        if len(current_class_students) == 0:
+            log(f"⚠️ 警告: このクラスに所属する学生が名簿に見つかりません")
+            log(f"   クラス名: {class_name}")
+            log(f"   期待されるクラスコード: {target_class_code}")
+            return [], "このクラスに所属する学生が名簿に見つかりません"
+        
         # 学生リストをキャッシュから取得
         cached_students_list, _ = self.cache.get_students_list(class_config['name'])
         
@@ -74,14 +114,30 @@ class DownloadService:
                     'id': student_folder['id']
                 })
         
-        # 提出者を検出
-        submitted_students = set()
+        # SharePoint上の学生をフィルタリング（現在のクラスの学生のみ）
+        filtered_students_list = []
         for student in cached_students_list:
+            student_name = student['name']
+            cleaned_name = clean_student_name(student_name)
+            
+            # このクラスの学生かチェック
+            if cleaned_name in current_class_students:
+                filtered_students_list.append(student)
+        
+        log(f"🎯 SharePoint上の該当学生: {len(filtered_students_list)}人（全体: {len(cached_students_list)}人）")
+        
+        # 提出者を検出（フィルタリング済みの学生のみ）
+        submitted_students = set()
+        for idx, student in enumerate(filtered_students_list, 1):
             if self.cancelled:
                 return [], "キャンセルされました"
             
             student_name = student['name']
             student_path = f"{base_folder}/{student_name}"
+            
+            # 進捗表示（10人ごと）
+            if idx % 10 == 0 or idx == len(filtered_students_list):
+                log(f"   📊 進捗: {idx}/{len(filtered_students_list)}人確認完了")
             
             # 学生フォルダ内の課題をチェック
             assignment_folders = self.api_client.get_assignment_folders(drive_id, student_path)
@@ -98,38 +154,25 @@ class DownloadService:
         
         log(f"✅ {len(submitted_students)}人が提出済み")
         
-        # 名簿から未提出者を抽出
+        # 名簿から未提出者を抽出（現在のクラスの学生のみ）
         unsubmitted = []
-        multi_class_students = self.cache.get_multi_class_students()
         
-        for name_key, info in students_info.items():
+        for name_key, student_info in current_class_students.items():
             if name_key not in submitted_students:
-                # 複数クラス記号を持つ学生の処理
-                if isinstance(info, list):
-                    for student_info in info:
-                        unsubmitted.append(student_info)
-                else:
-                    unsubmitted.append(info)
-        
-        # クラス記号でフィルタリング（現在のクラスに所属する学生のみ）
-        class_name = class_config['name']
-        filtered_unsubmitted = []
-        
-        for student_info in unsubmitted:
-            # クラス名からクラス記号を推定（例: OHC25-AT12B543 → AT12B543）
-            class_code_suffix = class_name.split('-')[-1] if '-' in class_name else class_name
-            student_class_code = student_info.get('class_code', '')
-            
-            # 部分一致で判定（最初の4文字が一致すれば同じクラスとみなす）
-            if student_class_code[:4] == class_code_suffix[:4]:
-                filtered_unsubmitted.append(student_info)
+                unsubmitted.append(student_info)
         
         # 出席番号順にソート
-        filtered_unsubmitted.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
+        unsubmitted.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
         
-        log(f"📋 未提出者: {len(filtered_unsubmitted)}人")
+        log(f"📋 未提出者: {len(unsubmitted)}人")
         
-        return filtered_unsubmitted, None
+        # デバッグ: 未提出者の詳細を表示
+        if unsubmitted:
+            log(f"\n未提出者詳細:")
+            for student in unsubmitted:
+                log(f"   - {student.get('student_name')} (クラスコード: {student.get('class_code')}, 出席番号: {student.get('attendance_number')})")
+        
+        return unsubmitted, None
     
     def download_assignment(self, class_config, assignment_name, output_base_dir, 
                            progress_callback=None, class_code_dialog_callback=None,
