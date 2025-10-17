@@ -434,6 +434,8 @@ class TeamsDownloaderGUI:
         # ポップアップメニューを作成
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="📁 ダウンロード先設定", command=self.set_download_path)
+        menu.add_command(label="🔄 ダウンロード先を初期化", command=self.reset_download_path)
+        menu.add_separator()
         menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
         menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
         
@@ -472,6 +474,20 @@ class TeamsDownloaderGUI:
             messagebox.showinfo(
                 "設定完了",
                 f"ダウンロード先を変更しました:\n\n{abs_save_path}"
+            )
+
+    def reset_download_path(self):
+        """ダウンロード先を初期設定に戻す"""
+        if messagebox.askyesno(
+            "確認",
+            "ダウンロード先を初期設定に戻しますか?\n\n初期設定: ../ (アプリケーションの親フォルダ)"
+        ):
+            reset_path = self.assignment_cache.reset_download_path()
+            abs_reset_path = os.path.abspath(reset_path)
+            self.log(f"🔄 ダウンロード先を初期設定に戻しました: {abs_reset_path}")
+            messagebox.showinfo(
+                "設定完了",
+                f"ダウンロード先を初期設定に戻しました:\n\n{abs_reset_path}"
             )
     
     def apply_font_settings(self):
@@ -908,7 +924,33 @@ class TeamsDownloaderGUI:
             
             # ダウンロード先をキャッシュから取得
             download_base_path = self.assignment_cache.get_download_path()
-            output_folder = os.path.abspath(download_base_path)
+            
+            # パスの検証と自動修復
+            try:
+                abs_path = os.path.abspath(download_base_path)
+                # パスが存在しない、またはアクセスできない場合
+                if not os.path.exists(abs_path):
+                    self.log(f"⚠️ ダウンロード先が見つかりません: {abs_path}")
+                    # 初期設定に戻す
+                    from core.cache import DEFAULT_DOWNLOAD_PATH
+                    download_base_path = DEFAULT_DOWNLOAD_PATH
+                    self.assignment_cache.reset_download_path()
+                    abs_path = os.path.abspath(download_base_path)
+                    self.log(f"🔄 初期設定を適用しました: {abs_path}")
+                
+                # フォルダを作成（必要に応じて）
+                os.makedirs(abs_path, exist_ok=True)
+                output_folder = abs_path
+                
+            except (OSError, PermissionError) as e:
+                self.log(f"❌ ダウンロード先へのアクセスエラー: {e}")
+                # 初期設定に戻す
+                from core.cache import DEFAULT_DOWNLOAD_PATH
+                download_base_path = DEFAULT_DOWNLOAD_PATH
+                self.assignment_cache.reset_download_path()
+                output_folder = os.path.abspath(download_base_path)
+                os.makedirs(output_folder, exist_ok=True)
+                self.log(f"🔄 初期設定を適用しました: {output_folder}")
             
             # クラス記号選択ダイアログのコールバック
             def class_code_dialog_callback(student_name, codes, class_name):
@@ -948,43 +990,43 @@ class TeamsDownloaderGUI:
     def authenticate_with_gui(self):
         """GUI付き認証（改良版）"""
         auth_result = {'success': False, 'completed': False}
-        
+
         def gui_callback(user_code, verification_uri):
             # ダイアログを表示
             self.device_code_dialog = DeviceCodeDialog(self.root, user_code, verification_uri)
-        
+
         def auth_thread():
             # 別スレッドで認証実行
             result = self.auth_manager.authenticate(gui_callback=gui_callback)
             auth_result['success'] = result
             auth_result['completed'] = True
-            
+
             # 認証完了後、ダイアログを閉じる
             if self.device_code_dialog:
                 self.root.after(0, lambda: self.device_code_dialog.close())
-        
+
         # 認証スレッドを開始
         thread = threading.Thread(target=auth_thread)
         thread.daemon = True
         thread.start()
-        
+
         # 認証完了を待つ（ポーリング方式でGUIをブロックしない）
         def wait_for_auth():
             if not auth_result['completed']:
                 self.root.after(100, wait_for_auth)  # 100ms後に再チェック
-        
+
         wait_for_auth()
-        
+
         # ダイアログが存在する場合は、その終了を待つ
         if self.device_code_dialog and self.device_code_dialog.dialog.winfo_exists():
             self.device_code_dialog.dialog.wait_window()
-        
+
         # 念のため、まだ完了していない場合は待機
         while not auth_result['completed']:
             self.root.update()
             import time
             time.sleep(0.1)
-        
+
         return auth_result['success']
     
     def show_font_settings(self):

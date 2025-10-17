@@ -312,6 +312,12 @@ class AssignmentCache:
         self.cache_data['download_path'] = path
         self.save_cache()
         return True
+    
+    def reset_download_path(self):
+        """ダウンロード先を初期設定に戻す"""
+        self.cache_data['download_path'] = DEFAULT_DOWNLOAD_PATH
+        self.save_cache()
+        return DEFAULT_DOWNLOAD_PATH
 
     # ========== クラス記号キャッシュ ==========
     
