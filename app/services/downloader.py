@@ -25,7 +25,7 @@ class DownloadService:
         self.cancelled = False
     
     def get_unsubmitted_students(self, class_config, assignment_name, progress_callback=None):
-        """未提出者を取得(キャッシュベース)
+        """未提出者を取得(クラス記号選択履歴を考慮)
         
         Returns:
             tuple: (未提出者リスト, エラーメッセージ)
@@ -40,40 +40,12 @@ class DownloadService:
         log(f"📊 未提出者確認: {assignment_name}")
         log(f"{'='*50}")
         
-        # キャッシュからクラス記号を取得
         class_name = class_config['name']
-        cached_class_codes = self.cache.get_class_codes(class_name)
-        
-        if not cached_class_codes:
-            return [], f"❌ クラス記号情報がありません。先に課題一覧をスキャンしてください（🔄ボタン）"
-        
-        log(f"🎯 対象クラス記号: {sorted(cached_class_codes)}")
         
         # 学生情報を取得
         students_info = self.cache.get_students_info()
         if not students_info:
             return [], "❌ 学生情報が見つかりません(students.csv/xlsxを配置してください)"
-        
-        # キャッシュされたクラス記号に該当する学生を抽出
-        current_class_students = {}
-        for name_key, info in students_info.items():
-            if isinstance(info, list):
-                # 複数クラス記号を持つ学生
-                for student_info in info:
-                    if student_info.get('class_code') in cached_class_codes:
-                        current_class_students[name_key] = student_info
-                        log(f"   📝 {student_info.get('student_name')} ({student_info.get('class_code')})")
-                        break
-            else:
-                if info.get('class_code') in cached_class_codes:
-                    current_class_students[name_key] = info
-                    log(f"   📝 {info.get('student_name')} ({info.get('class_code')})")
-        
-        log(f"📋 対象学生数: {len(current_class_students)}人")
-        
-        if len(current_class_students) == 0:
-            log(f"⚠️ 警告: 該当する学生が名簿に見つかりません")
-            return [], "該当する学生が名簿に見つかりません"
         
         # サイトIDとドライブIDを取得
         site_id = self.api_client.get_site_id(class_config["site_path"])
@@ -91,7 +63,7 @@ class DownloadService:
             base_folder = "Student Work/Working files"
         
         # 学生リストをキャッシュから取得
-        cached_students_list, _ = self.cache.get_students_list(class_config['name'])
+        cached_students_list, _ = self.cache.get_students_list(class_name)
         
         if not cached_students_list:
             # キャッシュがない場合はスキャン
@@ -104,19 +76,47 @@ class DownloadService:
                     'id': student_folder['id']
                 })
         
-        # SharePoint上の学生をフィルタリング(名簿の対象学生のみ)
-        from utils.file_utils import clean_student_name
-        filtered_students_list = []
+        # SharePoint上の学生リストから、実際にこのクラスにいる学生の情報を取得
+        current_class_students = {}
+        
+        log(f"\n🔍 クラス内の学生情報を照合中...")
+        
         for student in cached_students_list:
             student_name = student['name']
             cleaned_name = clean_student_name(student_name)
             name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
             
-            # 名簿の対象学生かチェック
-            if name_key in current_class_students:
-                filtered_students_list.append(student)
+            if name_key not in students_info:
+                continue
+            
+            # _get_student_infoと同じロジックで学生情報を取得
+            matched = students_info[name_key]
+            
+            if isinstance(matched, list):
+                # 複数クラス記号を持つ学生
+                # クラス記号選択履歴を確認
+                cached_selection = self.cache.get_class_code_selection(class_name, student_name)
+                
+                if cached_selection:
+                    # 選択履歴がある場合
+                    student_info = next((s for s in matched if s['class_code'] == cached_selection), None)
+                    if student_info:
+                        current_class_students[name_key] = student_info
+                        log(f"   ✓ {student_name}: {cached_selection} (選択履歴)")
+                else:
+                    # 選択履歴がない場合は最初のものを使用
+                    current_class_students[name_key] = matched[0]
+                    log(f"   ✓ {student_name}: {matched[0]['class_code']} (デフォルト)")
+            else:
+                # 単一クラス記号
+                current_class_students[name_key] = matched
+                log(f"   ✓ {student_name}: {matched['class_code']}")
         
-        log(f"🎯 SharePoint上の該当学生: {len(filtered_students_list)}人")
+        log(f"📋 対象学生数: {len(current_class_students)}人")
+        
+        if len(current_class_students) == 0:
+            log(f"⚠️ 警告: 該当する学生が名簿に見つかりません")
+            return [], "該当する学生が名簿に見つかりません"
         
         # 提出者を検出
         log(f"\n🔍 提出状況確認中...")
@@ -124,16 +124,26 @@ class DownloadService:
         log("")
         
         submitted_students = set()
-        for idx, student in enumerate(filtered_students_list, 1):
+        checked_count = 0
+        
+        for student in cached_students_list:
             if self.cancelled:
                 return [], "キャンセルされました"
             
             student_name = student['name']
+            cleaned_name = clean_student_name(student_name)
+            name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
+            
+            # 対象学生でない場合はスキップ
+            if name_key not in current_class_students:
+                continue
+            
+            checked_count += 1
             student_path = f"{base_folder}/{student_name}"
             
             # 進捗表示(10人ごと)
-            if idx % 10 == 0 or idx == len(filtered_students_list):
-                log(f"   📊 進捗: {idx}/{len(filtered_students_list)}人確認完了")
+            if checked_count % 10 == 0 or checked_count == len(current_class_students):
+                log(f"   📊 進捗: {checked_count}/{len(current_class_students)}人確認完了")
             
             # 学生フォルダ内の課題をチェック
             assignment_folders = self.api_client.get_assignment_folders(drive_id, student_path)
@@ -144,8 +154,6 @@ class DownloadService:
                 
                 if search_name.lower() in folder_name.lower():
                     # 提出済みとしてマーク
-                    cleaned_name = clean_student_name(student_name)
-                    name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
                     submitted_students.add(name_key)
                     break
         
