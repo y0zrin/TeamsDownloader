@@ -340,3 +340,16 @@ class AssignmentCache:
         self.cache_data['download_path'] = path
         self.save_cache()
         return True
+
+    # ========== クラス記号キャッシュ ==========
+    
+    def get_class_codes(self, class_name):
+        """クラスに含まれるクラス記号リストを取得"""
+        cache_key = f"class_codes_{class_name}"
+        return self.cache_data.get(cache_key, None)
+    
+    def set_class_codes(self, class_name, class_codes_list):
+        """クラスに含まれるクラス記号リストを保存"""
+        cache_key = f"class_codes_{class_name}"
+        self.cache_data[cache_key] = list(set(class_codes_list))  # 重複除去
+        self.save_cache()

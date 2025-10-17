@@ -29,3 +29,4 @@ encryption.key
 /downloads
 /core/__pycache__
 core/__pycache__/__init__.cpython-311.pyc
+/app/downloads

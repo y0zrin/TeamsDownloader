@@ -408,10 +408,10 @@ class UnsubmittedStudentsDialog:
             print(f"クリップボードへのコピーエラー: {e}")
 
 
-# ========== 新機能5: 特定学生選択ダイアログ（クラスフィルタリング対応版）==========
+# ========== 新機能5: 特定学生選択ダイアログ（全学生表示版）==========
 
 class SelectStudentsDialog:
-    """特定学生選択ダイアログ（クラスフィルタリング＋clean_student_name対応版）"""
+    """特定学生選択ダイアログ（全学生表示版）"""
     def __init__(self, parent, students_info, current_class_name):
         self.selected_students = None
         self.dialog = tk.Toplevel(parent)
@@ -432,7 +432,7 @@ class SelectStudentsDialog:
         
         ttk.Label(
             title_frame,
-            text=f"📥 ダウンロード対象学生を選択 - {current_class_name}",
+            text=f"📥 ダウンロード対象学生を選択",
             font=("", 12, "bold")
         ).pack()
         
@@ -472,33 +472,17 @@ class SelectStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # クラス名からクラスコードを抽出
-        if '-' in current_class_name:
-            target_class_code = current_class_name.split('-')[-1]
-        else:
-            target_class_code = current_class_name
-        
-        # 学生情報を格納（現在のクラスのみ）
+        # 学生情報を格納（全学生）
         self.all_students = []
         
-        # 学生情報からリストを作成（クラスフィルタリング）
+        # 学生情報からリストを作成
         if students_info:
             for name_key, info in students_info.items():
                 if isinstance(info, list):
-                    # 複数クラス記号を持つ学生
-                    for student_info in info:
-                        student_class_code = student_info.get('class_code', '')
-                        # 完全一致または前方一致（柔軟性を持たせる）
-                        if (student_class_code == target_class_code or 
-                            student_class_code.startswith(target_class_code[:6])):
-                            self.all_students.append(student_info)
-                            break
+                    # 複数クラス記号を持つ学生 - 最初のものを追加
+                    self.all_students.append(info[0])
                 else:
-                    student_class_code = info.get('class_code', '')
-                    # 完全一致または前方一致
-                    if (student_class_code == target_class_code or 
-                        student_class_code.startswith(target_class_code[:6])):
-                        self.all_students.append(info)
+                    self.all_students.append(info)
             
             # ソート
             self.all_students.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))

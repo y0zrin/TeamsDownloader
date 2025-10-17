@@ -99,7 +99,7 @@ class AssignmentService:
         return None
     
     def scan_assignments(self, api_client, class_config, cache_manager, progress_callback=None):
-        """課題一覧をスキャン"""
+        """課題一覧をスキャン（クラス記号も収集）"""
         def log(msg):
             if progress_callback:
                 progress_callback(msg)
@@ -147,6 +147,33 @@ class AssignmentService:
         # 学生リストをキャッシュに保存
         cache_manager.set_students_list(class_config['name'], students_list)
         log(f"💾 {total_students}人の学生リストをキャッシュに保存")
+        
+        # クラス記号を収集
+        from utils.file_utils import clean_student_name
+        students_info = cache_manager.get_students_info()
+        collected_class_codes = set()
+        
+        if students_info:
+            log(f"\n🔍 クラス記号を収集中...")
+            for student_folder in student_folders:
+                student_name = student_folder['name']
+                cleaned_name = clean_student_name(student_name)
+                name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
+                
+                if name_key in students_info:
+                    info = students_info[name_key]
+                    if isinstance(info, list):
+                        for item in info:
+                            collected_class_codes.add(item.get('class_code', ''))
+                    else:
+                        collected_class_codes.add(info.get('class_code', ''))
+            
+            # 空文字を除外
+            collected_class_codes.discard('')
+            
+            if collected_class_codes:
+                cache_manager.set_class_codes(class_config['name'], list(collected_class_codes))
+                log(f"✅ クラス記号を検出: {sorted(collected_class_codes)}")
         
         # 各学生フォルダから課題を収集
         assignments_set = set()
