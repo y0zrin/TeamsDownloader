@@ -213,7 +213,7 @@ class TeamsDownloaderGUI:
                     self.log(f"   📋 複数クラス記号を持つ学生: {len(multi_class_students)}人")
                     for name_key, student_list in multi_class_students.items():
                         codes = [s['class_code'] for s in student_list]
-                        self.log(f"      • {student_list[0]['name']}: {', '.join(codes)}")
+                        self.log(f"      • {student_list[0]['student_name']}: {', '.join(codes)}")
         except Exception as e:
             self.log(f"⚠️ 学生情報読み込みエラー: {e}")
             import traceback

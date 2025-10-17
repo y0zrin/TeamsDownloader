@@ -25,7 +25,7 @@ DEFAULT_DOWNLOAD_PATH = 'downloads'  # デフォルトダウンロード先
 
 
 class AssignmentCache:
-    """課題一覧のキャッシュ管理(増分更新対応・暗号化対応・設定保存対応)"""
+    """課題一覧のキャッシュ管理"""
     
     def __init__(self, cache_file="assignments_cache.json", cache_hours=24):
         self.cache_file = cache_file
@@ -34,7 +34,7 @@ class AssignmentCache:
         self.cache_data = self.load_cache()
     
     def load_cache(self):
-        """キャッシュファイルを読み込む(暗号化優先)"""
+        """キャッシュファイルを読み込む"""
         # 1. 暗号化キャッシュを優先的に読み込み
         if ENCRYPTION_AVAILABLE and os.path.exists(self.encrypted_cache_file):
             try:
@@ -73,7 +73,7 @@ class AssignmentCache:
         return {}
     
     def save_cache(self):
-        """キャッシュファイルに保存(暗号化)"""
+        """キャッシュファイルに保存"""
         # 暗号化が利用可能な場合
         if ENCRYPTION_AVAILABLE:
             encrypted_data = encrypt_data(self.cache_data)
@@ -146,22 +146,21 @@ class AssignmentCache:
             self.save_cache()
     
     def clear_all(self):
-        """すべてのキャッシュをクリア"""
+        """すべてのキャッシュをクリア（設定は保持）"""
+        # 保持する設定
+        font_size = self.cache_data.get('font_size', DEFAULT_FONT_SIZE)
+        download_path = self.cache_data.get('download_path', DEFAULT_DOWNLOAD_PATH)
+        cache_version = self.cache_data.get('_cache_version', 2)
+    
+        # キャッシュをクリア
         self.cache_data = {}
+    
+        # 設定を復元
+        self.cache_data['font_size'] = font_size
+        self.cache_data['download_path'] = download_path
+        self.cache_data['_cache_version'] = cache_version
+    
         self.save_cache()
-        
-        # 暗号化ファイルと平文ファイルの両方を削除
-        try:
-            if os.path.exists(self.encrypted_cache_file):
-                os.remove(self.encrypted_cache_file)
-        except:
-            pass
-        
-        try:
-            if os.path.exists(self.cache_file):
-                os.remove(self.cache_file)
-        except:
-            pass
     
     def get_students_list(self, class_name):
         """クラスの学生リストをキャッシュから取得"""
@@ -262,53 +261,26 @@ class AssignmentCache:
     
     def build_multi_class_cache(self):
         """複数クラス記号を持つ学生の専用キャッシュを構築"""
-        try:
-            import pandas as pd
-        except ImportError:
-            print("⚠️ pandas未インストール。複数クラス機能は無効です")
+        # 学生情報から複数クラス記号を持つ学生を抽出
+        students_info = self.get_students_info()
+        
+        if not students_info:
             return {}
         
-        # Excelファイルを探す
-        excel_file = None
-        if os.path.exists('students.xlsx'):
-            excel_file = 'students.xlsx'
-        elif os.path.exists('students.csv'):
-            excel_file = 'students.csv'
-        else:
-            return {}
+        multi_class_students = {}
         
-        try:
-            if excel_file.endswith('.xlsx'):
-                df = pd.read_excel(excel_file)
-            else:
-                df = pd.read_csv(excel_file, encoding='utf-8')
-            
-            # 姓名でグループ化して複数行ある学生を抽出
-            multi_class_students = {}
-            
-            for name, group in df.groupby('姓名'):
-                if len(group) > 1:  # 2行以上ある学生
-                    name_key = str(name).replace(' ', '').replace('　', '').strip()
-                    
-                    student_list = []
-                    for _, row in group.iterrows():
-                        student_list.append({
-                            'name': str(row['姓名']).strip(),
-                            'class_code': str(row['クラス記号']).strip(),
-                            'attendance_number': str(row['出席番号']).strip()
-                        })
-                    
-                    multi_class_students[name_key] = student_list
-            
-            # キャッシュに保存
+        # students_infoから複数クラス（リスト形式）の学生を抽出
+        for name_key, info in students_info.items():
+            if isinstance(info, list):
+                # 既に複数クラス記号を持つ学生として認識されている
+                multi_class_students[name_key] = info
+        
+        # キャッシュに保存
+        if multi_class_students:
             self.cache_data['multi_class_students'] = multi_class_students
             self.save_cache()
-            
-            return multi_class_students
-            
-        except Exception as e:
-            print(f"複数クラスキャッシュ構築エラー: {e}")
-            return {}
+        
+        return multi_class_students
     
     # ========== 新機能2: フォントサイズ設定 ==========
     
