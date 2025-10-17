@@ -21,7 +21,7 @@ FONT_SIZES = {
 }
 
 DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態
-DEFAULT_DOWNLOAD_PATH = '../'  # デフォルトダウンロード先
+DEFAULT_DOWNLOAD_PATH = '../downloads'  # デフォルトダウンロード先
 
 
 class AssignmentCache:
