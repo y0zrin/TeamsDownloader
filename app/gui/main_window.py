@@ -329,7 +329,7 @@ class TeamsDownloaderGUI:
         # 検索とボタンフレーム
         control_frame = ttk.Frame(parent)
         control_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
-        control_frame.columnconfigure(1, weight=1)
+        control_frame.columnconfigure(1, weight=1)  # 検索欄の列を伸縮可能に
         
         ttk.Label(control_frame, text="🔍").grid(row=0, column=0, padx=(0, 5))
         
@@ -337,55 +337,13 @@ class TeamsDownloaderGUI:
         self.search_entry = ttk.Entry(control_frame, textvariable=self.search_var)
         self.search_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
         self.search_var.trace('w', self.filter_assignments)
-        ToolTip(self.search_entry, "課題名で絞り込み検索")
         
         refresh_btn = ttk.Button(
             control_frame,
-            text="🔄",
-            command=self.refresh_assignments,
-            width=3
+            text="🔄 最新の課題一覧を取得",
+            command=self.refresh_assignments
         )
-        refresh_btn.grid(row=0, column=2, padx=(0, 2))
-        ToolTip(refresh_btn, "最新の課題一覧を取得")
-        
-        # 新機能4: 未提出者確認ボタン
-        unsubmitted_btn = ttk.Button(
-            control_frame,
-            text="📊",
-            command=self.check_unsubmitted,
-            width=3
-        )
-        unsubmitted_btn.grid(row=0, column=3, padx=(0, 2))
-        ToolTip(unsubmitted_btn, "未提出者を確認")
-        
-        # 新機能5: 特定学生選択ボタン
-        select_students_btn = ttk.Button(
-            control_frame,
-            text="👥",
-            command=self.select_specific_students,
-            width=3
-        )
-        select_students_btn.grid(row=0, column=4, padx=(0, 5))
-        ToolTip(select_students_btn, "特定の学生を選択してダウンロード")
-        
-        self.download_button = ttk.Button(
-            control_frame,
-            text="📥 DL",
-            command=self.download_selected_assignment,
-            width=8
-        )
-        self.download_button.grid(row=0, column=5, padx=(0, 2))
-        ToolTip(self.download_button, "選択した課題をダウンロード")
-        
-        self.cancel_button = ttk.Button(
-            control_frame,
-            text="❌",
-            command=self.cancel_download,
-            width=3,
-            state='disabled'
-        )
-        self.cancel_button.grid(row=0, column=6)
-        ToolTip(self.cancel_button, "ダウンロードをキャンセル")
+        refresh_btn.grid(row=0, column=2, padx=(0, 5))
         
         # 課題リスト
         list_frame = ttk.Frame(parent)
@@ -407,14 +365,44 @@ class TeamsDownloaderGUI:
         # ダブルクリックでダウンロード
         self.assignment_listbox.bind('<Double-Button-1>', lambda e: self.download_selected_assignment())
         
-        # ヒント
-        self.hint_label = ttk.Label(
-            parent,
-            text="💡 W-Click: DL | 📊: 未提出者 | 👥: 特定学生DL",
-            foreground="gray",
-            font=("", self.font_config['ui'] - 1)
+        # 下部ボタンフレーム（従来ヒントがあった場所）
+        self.bottom_button_frame = ttk.Frame(parent)
+        self.bottom_button_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.bottom_button_frame.columnconfigure(0, weight=1)
+        self.bottom_button_frame.columnconfigure(1, weight=1)
+        self.bottom_button_frame.columnconfigure(2, weight=1)
+        
+        # 通常時の3つのボタン
+        self.unsubmitted_btn = ttk.Button(
+            self.bottom_button_frame,
+            text="📊 未提出者一覧を出力",
+            command=self.check_unsubmitted
         )
-        self.hint_label.grid(row=3, column=0, pady=(5, 0))
+        self.unsubmitted_btn.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 2))
+        
+        self.select_students_btn = ttk.Button(
+            self.bottom_button_frame,
+            text="👥 学生を指定してDL",
+            command=self.select_specific_students
+        )
+        self.select_students_btn.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=2)
+        
+        self.download_button = ttk.Button(
+            self.bottom_button_frame,
+            text="📥 一括ダウンロード",
+            command=self.download_selected_assignment
+        )
+        self.download_button.grid(row=0, column=2, sticky=(tk.W, tk.E), padx=(2, 0))
+        
+        # キャンセルボタン（ダウンロード中のみ表示）
+        self.cancel_button = ttk.Button(
+            self.bottom_button_frame,
+            text="❌ ダウンロードをキャンセル",
+            command=self.cancel_download
+        )
+        # 初期状態では非表示
+        self.cancel_button.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E))
+        self.cancel_button.grid_remove()
         
         # キーボードショートカット(Shift+Delも維持)
         self.root.bind('<Shift-Delete>', lambda e: self.clear_cache())
@@ -422,6 +410,20 @@ class TeamsDownloaderGUI:
         # 課題データ保持
         self.all_assignments = []
         self.current_class_index = None
+    
+    def show_download_buttons(self):
+        """通常の3つのボタンを表示"""
+        self.cancel_button.grid_remove()
+        self.unsubmitted_btn.grid()
+        self.select_students_btn.grid()
+        self.download_button.grid()
+    
+    def show_cancel_button(self):
+        """キャンセルボタンのみを表示"""
+        self.unsubmitted_btn.grid_remove()
+        self.select_students_btn.grid_remove()
+        self.download_button.grid_remove()
+        self.cancel_button.grid()
     
     def show_settings_menu(self):
         """設定メニューを表示（ダウンロード先設定を追加）"""
@@ -487,9 +489,6 @@ class TeamsDownloaderGUI:
         
         # 課題リストのフォント
         self.assignment_listbox.configure(font=("", self.font_config['ui']))
-        
-        # ヒントラベルのフォント
-        self.hint_label.configure(font=("", self.font_config['ui'] - 1))
         
         self.log(f"✅ フォント設定を適用しました ({self.font_config['ui']}pt)")
     
@@ -839,8 +838,7 @@ class TeamsDownloaderGUI:
             
             # 即座にダウンロードを開始
             self.download_in_progress = True
-            self.download_button.config(state='disabled')
-            self.cancel_button.config(state='normal')
+            self.show_cancel_button()
             
             self.download_thread = threading.Thread(
                 target=self.download_assignment_background,
@@ -872,9 +870,8 @@ class TeamsDownloaderGUI:
         # ダウンロード進行中フラグを設定
         self.download_in_progress = True
         
-        # ボタン状態を変更
-        self.download_button.config(state='disabled')
-        self.cancel_button.config(state='normal')
+        # キャンセルボタンを表示
+        self.show_cancel_button()
         
         # バックグラウンドでダウンロード
         self.download_thread = threading.Thread(
@@ -890,9 +887,8 @@ class TeamsDownloaderGUI:
             self.download_service.cancel()
             self.log("\n⚠️ ダウンロードをキャンセルしました")
             
-            # ボタン状態を元に戻す
-            self.download_button.config(state='normal')
-            self.cancel_button.config(state='disabled')
+            # 通常のボタンを表示
+            self.show_download_buttons()
             
             # ダウンロード進行中フラグをリセット
             self.download_in_progress = False
@@ -936,9 +932,8 @@ class TeamsDownloaderGUI:
                     f"ダウンロードが完了しました!\n\n学生数: {student_count}人\nファイル数: {download_count}個"
                 )
             
-            # ボタン状態を元に戻す
-            self.root.after(0, lambda: self.download_button.config(state='normal'))
-            self.root.after(0, lambda: self.cancel_button.config(state='disabled'))
+            # 通常のボタンを表示
+            self.root.after(0, lambda: self.show_download_buttons())
             self.root.after(0, lambda: setattr(self, 'download_in_progress', False))
         
         except Exception as e:
@@ -946,9 +941,8 @@ class TeamsDownloaderGUI:
             import traceback
             traceback.print_exc()
             
-            # エラー時もボタン状態を元に戻す
-            self.root.after(0, lambda: self.download_button.config(state='normal'))
-            self.root.after(0, lambda: self.cancel_button.config(state='disabled'))
+            # エラー時も通常のボタンを表示
+            self.root.after(0, lambda: self.show_download_buttons())
             self.root.after(0, lambda: setattr(self, 'download_in_progress', False))
     
     def authenticate_with_gui(self):
