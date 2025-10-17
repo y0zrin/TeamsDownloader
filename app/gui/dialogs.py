@@ -1010,3 +1010,102 @@ class NameMappingDialog:
         """ダイアログを表示して結果を返す"""
         self.dialog.wait_window()
         return self.selected_student
+    
+class DownloadCompleteDialog:
+    """ダウンロード完了ダイアログ（フォルダを開くボタン付き）"""
+    def __init__(self, parent, student_count, file_count, folder_path):
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("ダウンロード完了")
+        self.dialog.geometry("450x250")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 225
+        y = (self.dialog.winfo_screenheight() // 2) - 125
+        self.dialog.geometry(f"450x250+{x}+{y}")
+        
+        self.folder_path = folder_path
+        
+        # メインフレーム
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # アイコンとタイトル
+        ttk.Label(
+            main_frame,
+            text="✅ ダウンロード完了",
+            font=("", 14, "bold"),
+            foreground="green"
+        ).pack(pady=(0, 20))
+        
+        # 統計情報
+        info_frame = ttk.Frame(main_frame)
+        info_frame.pack(pady=(0, 20))
+        
+        ttk.Label(
+            info_frame,
+            text=f"学生数: {student_count}人",
+            font=("", 11)
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Label(
+            info_frame,
+            text=f"ファイル数: {file_count}個",
+            font=("", 11)
+        ).pack(anchor=tk.W, pady=2)
+        
+        # 保存先パス（短縮表示）
+        path_label = ttk.Label(
+            main_frame,
+            text=f"保存先: {self._shorten_path(folder_path)}",
+            font=("", 9),
+            foreground="gray"
+        )
+        path_label.pack(pady=(0, 20))
+        
+        # ボタンフレーム
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=15, side=tk.BOTTOM)
+        
+        ttk.Button(
+            button_frame,
+            text="📁 フォルダを開く",
+            command=self._open_folder,
+            width=18
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="閉じる",
+            command=self.dialog.destroy,
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+    
+    def _shorten_path(self, path):
+        """パスを短縮表示"""
+        if len(path) <= 50:
+            return path
+        # 先頭と末尾を残して中間を省略
+        return path[:20] + "..." + path[-27:]
+    
+    def _open_folder(self):
+        """フォルダを開く"""
+        import platform
+        import subprocess
+        
+        try:
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(self.folder_path)
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", self.folder_path])
+            else:  # Linux
+                subprocess.Popen(["xdg-open", self.folder_path])
+        except Exception as e:
+            messagebox.showerror("エラー", f"フォルダを開けませんでした:\n{e}")
+    
+    def show(self):
+        """ダイアログを表示"""
+        self.dialog.wait_window()

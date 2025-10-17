@@ -969,10 +969,23 @@ class TeamsDownloaderGUI:
             )
             
             if not self.download_service.cancelled and student_count > 0:
-                messagebox.showinfo(
-                    "完了",
-                    f"ダウンロードが完了しました!\n\n学生数: {student_count}人\nファイル数: {download_count}個"
-                )
+                # 保存先フォルダを再計算
+                from utils.file_utils import sanitize_filename
+                safe_assignment_name = sanitize_filename(assignment_name)
+                final_folder = os.path.join(output_folder, selected_class['name'], safe_assignment_name)
+                
+                # カスタムダイアログを表示
+                from gui.dialogs import DownloadCompleteDialog
+                def show_complete_dialog():
+                    dialog = DownloadCompleteDialog(
+                        self.root,
+                        student_count,
+                        download_count,
+                        final_folder
+                    )
+                    dialog.show()
+                
+                self.root.after(0, show_complete_dialog)
             
             # 通常のボタンを表示
             self.root.after(0, lambda: self.show_download_buttons())
