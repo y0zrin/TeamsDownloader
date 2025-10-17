@@ -1049,15 +1049,15 @@ class TeamsDownloaderGUI:
         # キャッシュクリアオプションを提示
         dialog = tk.Toplevel(self.root)
         dialog.title("キャッシュクリア")
-        dialog.geometry("400x200")
+        dialog.geometry("400x250")  # ← 高さを200→250に変更
         dialog.transient(self.root)
         dialog.grab_set()
         
         # センタリング
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - 200
-        y = (dialog.winfo_screenheight() // 2) - 100
-        dialog.geometry(f"400x200+{x}+{y}")
+        y = (dialog.winfo_screenheight() // 2) - 125  # ← -100→-125に変更
+        dialog.geometry(f"400x250+{x}+{y}")  # ← 高さを200→250に変更
         
         ttk.Label(
             dialog,
@@ -1069,11 +1069,13 @@ class TeamsDownloaderGUI:
         var_assignments = tk.BooleanVar(value=False)
         var_students = tk.BooleanVar(value=True)  # デフォルトで選択
         var_selections = tk.BooleanVar(value=False)
+        var_mappings = tk.BooleanVar(value=False)  # ← 追加
         
         ttk.Checkbutton(dialog, text="すべてのキャッシュ", variable=var_all).pack(anchor=tk.W, padx=20)
         ttk.Checkbutton(dialog, text="課題一覧キャッシュ", variable=var_assignments).pack(anchor=tk.W, padx=20)
         ttk.Checkbutton(dialog, text="学生情報キャッシュ (推奨)", variable=var_students).pack(anchor=tk.W, padx=20)
         ttk.Checkbutton(dialog, text="クラス記号選択履歴", variable=var_selections).pack(anchor=tk.W, padx=20)
+        ttk.Checkbutton(dialog, text="学生IDマッピング", variable=var_mappings).pack(anchor=tk.W, padx=20)  # ← 追加
         
         result = {'confirmed': False}
         
@@ -1083,6 +1085,7 @@ class TeamsDownloaderGUI:
             result['assignments'] = var_assignments.get()
             result['students'] = var_students.get()
             result['selections'] = var_selections.get()
+            result['mappings'] = var_mappings.get()  # ← 追加
             dialog.destroy()
         
         def on_cancel():
@@ -1106,7 +1109,7 @@ class TeamsDownloaderGUI:
                 if result['assignments']:
                     # 課題キャッシュをクリア
                     keys_to_delete = [k for k in self.assignment_cache.cache_data.keys() 
-                                     if not k.startswith('students_') and not k.startswith('class_selection_') and k not in ['font_size', 'download_path', '_cache_version', 'multi_class_students']]
+                                     if not k.startswith('students_') and not k.startswith('class_selection_') and not k.startswith('folder_mapping_') and k not in ['font_size', 'download_path', '_cache_version', 'multi_class_students']]  # ← folder_mapping_を除外に追加
                     for key in keys_to_delete:
                         del self.assignment_cache.cache_data[key]
                     cleared.append("課題一覧キャッシュ")
@@ -1124,6 +1127,11 @@ class TeamsDownloaderGUI:
                     for key in keys_to_delete:
                         del self.assignment_cache.cache_data[key]
                     cleared.append("クラス記号選択履歴")
+                
+                if result['mappings']:  # ← 追加
+                    # 学生IDマッピングをクリア
+                    self.assignment_cache.clear_folder_mappings()
+                    cleared.append("学生IDマッピング")
                 
                 if cleared:
                     self.assignment_cache.save_cache()
