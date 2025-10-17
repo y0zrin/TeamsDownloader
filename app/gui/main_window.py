@@ -5,7 +5,7 @@
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, simpledialog
+from tkinter import ttk, scrolledtext, messagebox, simpledialog, filedialog
 import threading
 import sys
 import os
@@ -225,6 +225,11 @@ class TeamsDownloaderGUI:
         font_size_name = self.assignment_cache.get_font_size()
         size_names = {'smallest': '最小', 'small': '小', 'medium': '中', 'large': '大', 'largest': '最大'}
         self.log(f"🔤 フォントサイズ: {size_names.get(font_size_name, '小')} ({self.font_config['ui']}pt)")
+        
+        # ダウンロード先を表示
+        download_path = self.assignment_cache.get_download_path()
+        abs_download_path = os.path.abspath(download_path)
+        self.log(f"📁 ダウンロード先: {abs_download_path}")
         self.log("")
     
     def create_class_panel(self, parent):
@@ -417,6 +422,55 @@ class TeamsDownloaderGUI:
         # 課題データ保持
         self.all_assignments = []
         self.current_class_index = None
+    
+    def show_settings_menu(self):
+        """設定メニューを表示（ダウンロード先設定を追加）"""
+        # 設定ボタンの位置を取得
+        x = self.settings_button.winfo_rootx()
+        y = self.settings_button.winfo_rooty() + self.settings_button.winfo_height()
+        
+        # ポップアップメニューを作成
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="📁 ダウンロード先設定", command=self.set_download_path)
+        menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
+        menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
+        
+        # メニューを表示
+        menu.post(x, y)
+    
+    def set_download_path(self):
+        """ダウンロード先を設定"""
+        current_path = self.assignment_cache.get_download_path()
+        abs_current_path = os.path.abspath(current_path)
+        
+        # フォルダ選択ダイアログを表示
+        new_path = filedialog.askdirectory(
+            title="ダウンロード先フォルダを選択",
+            initialdir=abs_current_path
+        )
+        
+        if new_path:
+            # 相対パスに変換（可能な場合）
+            try:
+                # カレントディレクトリからの相対パスを取得
+                rel_path = os.path.relpath(new_path, os.getcwd())
+                # 相対パスが .. で始まらない場合のみ相対パスを使用
+                if not rel_path.startswith('..'):
+                    save_path = rel_path
+                else:
+                    save_path = new_path
+            except ValueError:
+                # 異なるドライブの場合など
+                save_path = new_path
+            
+            # キャッシュに保存
+            self.assignment_cache.set_download_path(save_path)
+            abs_save_path = os.path.abspath(save_path)
+            self.log(f"📁 ダウンロード先を変更しました: {abs_save_path}")
+            messagebox.showinfo(
+                "設定完了",
+                f"ダウンロード先を変更しました:\n\n{abs_save_path}"
+            )
     
     def apply_font_settings(self):
         """フォント設定を動的に適用(再起動不要)"""
@@ -844,7 +898,7 @@ class TeamsDownloaderGUI:
             self.download_in_progress = False
     
     def download_assignment_background(self, selected_class, assignment_name, selected_students=None):
-        """課題をバックグラウンドでダウンロード"""
+        """課題をバックグラウンドでダウンロード（ダウンロード先設定対応版）"""
         try:
             # 認証
             if not self.auth_manager.access_token:
@@ -856,10 +910,9 @@ class TeamsDownloaderGUI:
             # ダウンロード処理
             selected_class = self.assignment_service.migrate_old_config(selected_class)
             
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            if script_dir.endswith('gui'):
-                script_dir = os.path.dirname(script_dir)  # gui/ の親ディレクトリ
-            output_folder = os.path.join(script_dir, "downloads")
+            # ダウンロード先をキャッシュから取得
+            download_base_path = self.assignment_cache.get_download_path()
+            output_folder = os.path.abspath(download_base_path)
             
             # クラス記号選択ダイアログのコールバック
             def class_code_dialog_callback(student_name, codes, class_name):
@@ -911,20 +964,6 @@ class TeamsDownloaderGUI:
             self.device_code_dialog = None
         
         return result
-    
-    def show_settings_menu(self):
-        """設定メニューを表示"""
-        # 設定ボタンの位置を取得
-        x = self.settings_button.winfo_rootx()
-        y = self.settings_button.winfo_rooty() + self.settings_button.winfo_height()
-        
-        # ポップアップメニューを作成
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
-        menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
-        
-        # メニューを表示
-        menu.post(x, y)
     
     def show_font_settings(self):
         """フォント設定を表示(新機能2 - 再起動不要版)"""
@@ -1003,7 +1042,7 @@ class TeamsDownloaderGUI:
                 if result['assignments']:
                     # 課題キャッシュをクリア
                     keys_to_delete = [k for k in self.assignment_cache.cache_data.keys() 
-                                     if not k.startswith('students_') and not k.startswith('class_selection_') and k not in ['font_size', '_cache_version', 'multi_class_students']]
+                                     if not k.startswith('students_') and not k.startswith('class_selection_') and k not in ['font_size', 'download_path', '_cache_version', 'multi_class_students']]
                     for key in keys_to_delete:
                         del self.assignment_cache.cache_data[key]
                     cleared.append("課題一覧キャッシュ")

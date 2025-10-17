@@ -5,6 +5,8 @@ Write-Host "Teams課題ダウンローダー 起動チェック" -ForegroundColo
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+Set-Location $PSScriptRoot
+
 # Pythonのチェック
 Write-Host "[1/5] Pythonのチェック..." -ForegroundColor Yellow
 try {

@@ -21,6 +21,7 @@ FONT_SIZES = {
 }
 
 DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態
+DEFAULT_DOWNLOAD_PATH = 'downloads'  # デフォルトダウンロード先
 
 
 class AssignmentCache:
@@ -327,3 +328,15 @@ class AssignmentCache:
         """現在のフォント設定を取得"""
         size_key = self.get_font_size()
         return FONT_SIZES.get(size_key, FONT_SIZES[DEFAULT_FONT_SIZE])
+    
+    # ========== ダウンロード先設定 ==========
+    
+    def get_download_path(self):
+        """ダウンロード先パスを取得"""
+        return self.cache_data.get('download_path', DEFAULT_DOWNLOAD_PATH)
+    
+    def set_download_path(self, path):
+        """ダウンロード先パスを保存"""
+        self.cache_data['download_path'] = path
+        self.save_cache()
+        return True
