@@ -797,3 +797,216 @@ class ProgressDialog:
             self.dialog.destroy()
         except:
             pass
+
+# ========== 名前マッピングダイアログ ==========
+
+class NameMappingDialog:
+    """SharePoint名と名簿名の紐付けダイアログ"""
+    def __init__(self, parent, sharepoint_name, students_info):
+        self.selected_student = None
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("学生名の紐付け")
+        self.dialog.geometry("600x550")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # センタリング
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - 300
+        y = (self.dialog.winfo_screenheight() // 2) - 275
+        self.dialog.geometry(f"600x550+{x}+{y}")
+        
+        # タイトル
+        title_frame = ttk.Frame(self.dialog, padding="15")
+        title_frame.pack(fill=tk.X)
+        
+        ttk.Label(
+            title_frame,
+            text="📝 名簿に見つかりません",
+            font=("", 13, "bold")
+        ).pack()
+        
+        ttk.Label(
+            title_frame,
+            text=f"SharePoint: {sharepoint_name}",
+            font=("", 11),
+            foreground="blue"
+        ).pack(pady=5)
+        
+        ttk.Label(
+            title_frame,
+            text="この学生は名簿のどの学生と一致しますか？",
+            font=("", 10)
+        ).pack(pady=5)
+        
+        # 説明
+        info_frame = ttk.Frame(self.dialog, padding="10")
+        info_frame.pack(fill=tk.X)
+        
+        ttk.Label(
+            info_frame,
+            text="💡 設定は保存され、次回以降は自動で紐付けられます",
+            font=("", 9),
+            foreground="gray"
+        ).pack()
+        
+        # 検索バー
+        search_frame = ttk.Frame(self.dialog, padding="10")
+        search_frame.pack(fill=tk.X)
+        
+        ttk.Label(search_frame, text="🔍 検索:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("", 10))
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.search_var.trace('w', self._filter_list)
+        self.search_entry.focus()
+        
+        # 学生リスト
+        list_frame = ttk.Frame(self.dialog, padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.listbox = tk.Listbox(
+            list_frame,
+            yscrollcommand=scrollbar.set,
+            font=("", 10),
+            activestyle='dotbox'
+        )
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.listbox.yview)
+        
+        # ダブルクリックで選択
+        self.listbox.bind('<Double-Button-1>', lambda e: self._on_select())
+        
+        # 学生データを保持
+        self.all_students = []
+        for name_key, info in students_info.items():
+            if isinstance(info, list):
+                # 複数クラスの場合は全て追加
+                for item in info:
+                    self.all_students.append(item)
+            else:
+                self.all_students.append(info)
+        
+        # クラス記号、出席番号でソート
+        self.all_students.sort(key=lambda x: (
+            x.get('class_code', ''), 
+            int(x.get('attendance_number', 0)) if str(x.get('attendance_number', '')).isdigit() else 999
+        ))
+        
+        self._populate_list()
+        
+        # ボタン
+        button_frame = ttk.Frame(self.dialog, padding="15")
+        button_frame.pack(fill=tk.X)
+        
+        btn_frame1 = ttk.Frame(button_frame)
+        btn_frame1.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Button(
+            btn_frame1,
+            text="✅ この学生と紐付ける",
+            command=self._on_select,
+            width=25
+        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        
+        ttk.Button(
+            btn_frame1,
+            text="⏭️ 今回はスキップ",
+            command=self._on_skip,
+            width=25
+        ).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        
+        btn_frame2 = ttk.Frame(button_frame)
+        btn_frame2.pack(fill=tk.X)
+        
+        ttk.Button(
+            btn_frame2,
+            text="❌ 除外する（退学者等）",
+            command=self._on_exclude,
+            width=25
+        ).pack(expand=True, fill=tk.X)
+    
+    def _populate_list(self, students=None):
+        """リストを更新"""
+        self.listbox.delete(0, tk.END)
+        if students is None:
+            students = self.all_students
+        
+        for student in students:
+            class_code = student.get('class_code', '')
+            name = student.get('student_name', '')
+            attendance = student.get('attendance_number', '')
+            
+            try:
+                attendance_str = f"{int(attendance):02d}"
+            except:
+                attendance_str = str(attendance)
+            
+            display = f"[{class_code}] {attendance_str} {name}"
+            self.listbox.insert(tk.END, display)
+    
+    def _filter_list(self, *args):
+        """検索フィルタ"""
+        search = self.search_var.get().lower()
+        if not search:
+            self._populate_list()
+            return
+        
+        filtered = [s for s in self.all_students 
+                   if search in s.get('student_name', '').lower() or
+                      search in s.get('class_code', '').lower() or
+                      search in str(s.get('attendance_number', '')).lower()]
+        
+        self._populate_list(filtered)
+    
+    def _get_selected_student(self):
+        """選択された学生を取得"""
+        selection = self.listbox.curselection()
+        if not selection:
+            return None
+        
+        idx = selection[0]
+        # フィルタされたリストから該当学生を取得
+        search = self.search_var.get().lower()
+        if search:
+            filtered = [s for s in self.all_students 
+                       if search in s.get('student_name', '').lower() or
+                          search in s.get('class_code', '').lower() or
+                          search in str(s.get('attendance_number', '')).lower()]
+            return filtered[idx] if idx < len(filtered) else None
+        else:
+            return self.all_students[idx] if idx < len(self.all_students) else None
+    
+    def _on_select(self):
+        """選択ボタン"""
+        student = self._get_selected_student()
+        if not student:
+            messagebox.showwarning("警告", "学生を選択してください")
+            return
+        
+        self.selected_student = student
+        self.dialog.destroy()
+    
+    def _on_exclude(self):
+        """除外ボタン"""
+        if messagebox.askyesno(
+            "確認",
+            "この学生を除外リストに追加しますか？\n\n"
+            "除外された学生は今後のダウンロードで自動的にスキップされます。"
+        ):
+            self.selected_student = "EXCLUDED"
+            self.dialog.destroy()
+    
+    def _on_skip(self):
+        """スキップボタン"""
+        self.selected_student = None
+        self.dialog.destroy()
+    
+    def show(self):
+        """ダイアログを表示して結果を返す"""
+        self.dialog.wait_window()
+        return self.selected_student

@@ -331,3 +331,50 @@ class AssignmentCache:
         cache_key = f"class_codes_{class_name}"
         self.cache_data[cache_key] = list(set(class_codes_list))  # 重複除去
         self.save_cache()
+
+    # ========== IDベース名前マッピング ==========
+    
+    def get_name_mapping_by_id(self, folder_id):
+        """フォルダIDから学生情報マッピングを取得（名前変更に対応）"""
+        key = f"folder_mapping_{folder_id}"
+        return self.cache_data.get(key)
+    
+    def set_name_mapping_by_id(self, folder_id, folder_name, student_info):
+        """フォルダIDで学生情報マッピングを保存
+        
+        Args:
+            folder_id: SharePointフォルダID
+            folder_name: 現在のフォルダ名（参考情報）
+            student_info: 学生情報辞書 or "EXCLUDED"
+        """
+        from datetime import datetime
+        
+        key = f"folder_mapping_{folder_id}"
+        if student_info == "EXCLUDED":
+            self.cache_data[key] = {
+                'status': 'EXCLUDED',
+                'last_known_name': folder_name,
+                'excluded_at': datetime.now().isoformat()
+            }
+        else:
+            self.cache_data[key] = {
+                'status': 'MAPPED',
+                'last_known_name': folder_name,
+                'class_code': student_info['class_code'],
+                'attendance_number': student_info['attendance_number'],
+                'student_name': student_info['student_name'],
+                'mapped_at': datetime.now().isoformat()
+            }
+        self.save_cache()
+    
+    def is_excluded_by_id(self, folder_id):
+        """フォルダIDで除外判定"""
+        mapping = self.get_name_mapping_by_id(folder_id)
+        return mapping and mapping.get('status') == 'EXCLUDED'
+    
+    def clear_folder_mappings(self):
+        """すべてのフォルダマッピングをクリア"""
+        keys_to_delete = [k for k in self.cache_data.keys() if k.startswith('folder_mapping_')]
+        for key in keys_to_delete:
+            del self.cache_data[key]
+        self.save_cache()

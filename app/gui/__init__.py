@@ -5,10 +5,19 @@ GUI層
 """
 
 from .main_window import TeamsDownloaderGUI
-from .dialogs import DeviceCodeDialog, ClassCodeSelectionDialog
+from .dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog,
+                     EditClassDialog, UnsubmittedStudentsDialog,
+                     SelectStudentsDialog, FontSettingsDialog,
+                     ProgressDialog, NameMappingDialog)
 
 __all__ = [
     'TeamsDownloaderGUI',
     'DeviceCodeDialog',
     'ClassCodeSelectionDialog',
+    'EditClassDialog',
+    'UnsubmittedStudentsDialog',
+    'SelectStudentsDialog',
+    'FontSettingsDialog',
+    'ProgressDialog',
+    'NameMappingDialog',
 ]
