@@ -39,22 +39,31 @@ class AssignmentService:
     
     def add_class(self, class_name):
         """クラスを追加"""
+        # SharePoint Graph API用に/を-に置換
+        original_name = class_name
+        sanitized_name = class_name.replace('/', '-')
+        
         # 既に登録済みかチェック
         for cls in self.config["classes"]:
-            if cls["name"] == class_name:
-                return False, f"{class_name} は既に登録されています"
+            if cls["name"] == sanitized_name:
+                return False, f"{sanitized_name} は既に登録されています"
         
         # SharePointサイトURLを構築
-        site_url = f"https://nkzacjp.sharepoint.com/sites/{class_name}"
+        site_url = f"https://nkzacjp.sharepoint.com/sites/{sanitized_name}"
         
         self.config["classes"].append({
-            "name": class_name,
+            "name": sanitized_name,
             "site_url": site_url,
-            "site_path": f"/sites/{class_name}"
+            "site_path": f"/sites/{sanitized_name}"
         })
         
         self.save_config()
-        return True, f"✅ {class_name} を追加しました"
+        
+        # 置換があった場合は通知
+        if original_name != sanitized_name:
+            return True, f"✅ {original_name} を {sanitized_name} として追加しました\n   (SharePoint API対応のため / を - に置換)"
+        else:
+            return True, f"✅ {sanitized_name} を追加しました"
     
     def edit_class(self, index, new_class_name):
         """クラスを編集(新機能)"""
