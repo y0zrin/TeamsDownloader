@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ダウンロード全体制御
+ダウンロード全体制御（リファクタリング版）
+
+AssignmentAccessorを使用して共通処理を簡素化
 """
 
-from typing import Optional, Callable, List, Tuple
+from typing import Optional, Callable, List
 from models.student import SharePointStudent, Student
-from models.download_result import (
-    DownloadResult, StudentDownloadResult, UnsubmittedCheckResult, UnsubmittedStudent
-)
+from models.download_result import DownloadResult, StudentDownloadResult
+from services.download_core.assignment_accessor import AssignmentAccessor
 from services.download_core.progress_tracker import ProgressTracker
 from services.download_core.student_matcher import StudentMatcher
 from services.download_core.file_fetcher import FileFetcher
@@ -22,6 +23,7 @@ class DownloadCoordinator:
         self.api_client = api_client
         self.cache = cache_manager
         self.progress = ProgressTracker()
+        self.accessor = AssignmentAccessor(api_client, cache_manager)
         self.file_fetcher = FileFetcher(api_client)
     
     def download_assignment(
@@ -34,48 +36,51 @@ class DownloadCoordinator:
         selected_students: Optional[List[str]] = None,
         name_mapping_dialog_callback: Optional[Callable] = None
     ) -> DownloadResult:
-        """課題をダウンロード
-        
-        Args:
-            class_config: クラス設定
-            assignment_name: 課題名
-            output_base_dir: 出力ベースディレクトリ
-            progress_callback: 進捗コールバック
-            class_code_dialog_callback: クラス記号選択ダイアログコールバック
-            selected_students: ダウンロード対象の学生名リスト（オプション）
-        
-        Returns:
-            ダウンロード結果
-        """
+        """課題をダウンロード"""
         # 進捗トラッカーを初期化
         self.progress = ProgressTracker(progress_callback)
         self.progress.reset_cancel()
         
         # ヘッダー出力
         if selected_students:
-            self.progress.log_header(f"📥 課題ダウンロード開始(特定学生のみ): {assignment_name}")
+            self.progress.log_header(
+                f"📥 課題ダウンロード開始(特定学生のみ): {assignment_name}"
+            )
         else:
             self.progress.log_header(f"📥 課題ダウンロード開始: {assignment_name}")
         
         try:
-            # 準備
-            drive_id, drive_name, base_folder, output_folder = self._prepare_download(
-                class_config, assignment_name, output_base_dir
+            # SharePointに接続
+            drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
+                class_config, self.progress
             )
             
+            # 出力フォルダを準備
+            output_folder = self.accessor.prepare_output_folder(
+                output_base_dir, class_config['name'], assignment_name
+            )
+            self.progress.log_info(f"\n💾 保存先: {output_folder}")
+            
             # 学生リストを取得
-            sharepoint_students = self._get_sharepoint_students(
-                class_config['name'], drive_id, base_folder
+            sharepoint_students = self.accessor.get_sharepoint_students(
+                class_config['name'], drive_id, base_folder, self.progress
             )
             
             # フィルタリング（特定学生指定時）
             if selected_students:
-                sharepoint_students = self._filter_students(sharepoint_students, selected_students)
-                self.progress.log_info(f"🎯 ダウンロード対象: {len(sharepoint_students)}人")
+                sharepoint_students = self._filter_students(
+                    sharepoint_students, selected_students
+                )
+                self.progress.log_info(
+                    f"🎯 ダウンロード対象: {len(sharepoint_students)}人"
+                )
             
             # StudentMatcherを初期化
             students_info = self.cache.get_students_info()
-            student_matcher = StudentMatcher(self.cache, students_info) if students_info else None
+            student_matcher = (
+                StudentMatcher(self.cache, students_info)
+                if students_info else None
+            )
             
             # ダウンロード実行
             result = self._execute_download(
@@ -107,109 +112,10 @@ class DownloadCoordinator:
             result.add_error(str(e))
             return result
     
-    def _prepare_download(
-        self, class_config: dict, assignment_name: str, output_base_dir: str
-    ) -> Tuple[str, str, str, str]:
-        """ダウンロードの準備"""
-        # サイトIDとドライブIDを取得
-        site_id = self.api_client.get_site_id(class_config["site_path"])
-        if not site_id:
-            raise Exception("サイトIDの取得に失敗")
-        
-        drive_id, drive_name = self.api_client.get_drive_id(site_id)
-        if not drive_id:
-            raise Exception("ドライブIDの取得に失敗")
-        
-        self.progress.log_success("SharePointに接続しました")
-        
-        # ベースフォルダを設定
-        if drive_name == "Student Work":
-            base_folder = "Working files"
-        else:
-            base_folder = "Student Work/Working files"
-        
-        self.progress.log_info(f"📂 フォルダパス: {drive_name}/{base_folder}")
-        
-        # 出力フォルダを作成
-        from utils.file_utils import sanitize_filename
-        import os
-        safe_assignment_name = sanitize_filename(assignment_name)
-        output_folder = os.path.join(output_base_dir, class_config['name'], safe_assignment_name)
-        os.makedirs(output_folder, exist_ok=True)
-        self.progress.log_info(f"💾 保存先: {output_folder}")
-        
-        return drive_id, drive_name, base_folder, output_folder
-    
-    def _get_sharepoint_students(
-        self, class_name: str, drive_id: str, base_folder: str
-    ) -> List[SharePointStudent]:
-        """SharePoint上の学生リストを取得"""
-        self.progress.log_section("🔍 学生リストを取得中...")
-        
-        # キャッシュから取得
-        old_cached_list, _ = self.cache.get_students_list(class_name)
-        
-        # SharePointから最新リストを取得
-        student_folders = self.api_client.get_student_folders(drive_id, base_folder)
-        self.progress.log_success(f"{len(student_folders)}人の学生フォルダを検出")
-        
-        # IDベースの学生リストを構築
-        student_id_map = {}
-        
-        # 旧キャッシュから履歴を構築
-        if old_cached_list:
-            for old_student in old_cached_list:
-                student_id = old_student['id']
-                student_id_map[student_id] = {
-                    'id': student_id,
-                    'current_name': old_student['name'],
-                    'past_names': [old_student['name']]
-                }
-        
-        # 最新リストで更新
-        for student_folder in student_folders:
-            student_id = student_folder['id']
-            current_name = student_folder['name']
-            
-            if student_id in student_id_map:
-                old_name = student_id_map[student_id]['current_name']
-                if current_name != old_name:
-                    self.progress.log_info(
-                        f"🔄 名前変更検出: {old_name} → {current_name}"
-                    )
-                    student_id_map[student_id]['current_name'] = current_name
-                    if current_name not in student_id_map[student_id]['past_names']:
-                        student_id_map[student_id]['past_names'].append(current_name)
-            else:
-                student_id_map[student_id] = {
-                    'id': student_id,
-                    'current_name': current_name,
-                    'past_names': [current_name]
-                }
-        
-        # SharePointStudentオブジェクトのリストを作成
-        sharepoint_students = []
-        for student_id, data in student_id_map.items():
-            for name in data['past_names']:
-                sharepoint_students.append(SharePointStudent(
-                    folder_id=student_id,
-                    folder_name=name,
-                    current_name=data['current_name']
-                ))
-        
-        # キャッシュを更新
-        simple_cache_list = [
-            {'name': data['current_name'], 'id': student_id}
-            for student_id, data in student_id_map.items()
-        ]
-        self.cache.set_students_list(class_name, simple_cache_list)
-        
-        self.progress.log_info(f"💾 統合学生リスト: {len(student_id_map)}人")
-        
-        return sharepoint_students
-    
     def _filter_students(
-        self, sharepoint_students: List[SharePointStudent], selected_students: List[str]
+        self,
+        sharepoint_students: List[SharePointStudent],
+        selected_students: List[str]
     ) -> List[SharePointStudent]:
         """特定学生でフィルタリング"""
         selected_set = set(selected_students)
@@ -246,7 +152,9 @@ class DownloadCoordinator:
             
             # 除外チェック
             if student_matcher and student_matcher.is_excluded(sp_student.folder_id):
-                self.progress.log_info(f"  ⏭️ {sp_student.folder_name}: 除外済み（スキップ）")
+                self.progress.log_info(
+                    f"  ⏭️ {sp_student.folder_name}: 除外済み（スキップ）"
+                )
                 continue
             
             scanned_count += 1
@@ -269,7 +177,10 @@ class DownloadCoordinator:
                 student_info = None
                 if student_matcher:
                     student_info = student_matcher.match_student(
-                        sp_student, class_name, class_code_dialog_callback, name_mapping_dialog_callback
+                        sp_student,
+                        class_name,
+                        class_code_dialog_callback,
+                        name_mapping_dialog_callback
                     )
                 
                 student_data_list.append({
@@ -295,7 +206,8 @@ class DownloadCoordinator:
                 raise DownloadCancelledError()
             
             downloaded = self._download_student_files(
-                student_data, drive_id, output_folder, class_name, assignment_name
+                student_data, drive_id, output_folder,
+                class_name, assignment_name
             )
             result.add_student_result(downloaded)
             result.file_count += downloaded.file_count
@@ -320,7 +232,9 @@ class DownloadCoordinator:
         if student_info:
             self.progress.log_info(f"  📁 {student_info} の提出物を処理中...")
         else:
-            self.progress.log_info(f"  📁 {sp_student.folder_name} の提出物を処理中...")
+            self.progress.log_info(
+                f"  📁 {sp_student.folder_name} の提出物を処理中..."
+            )
         
         # 出力フォルダを作成
         student_output = self.file_fetcher.create_output_folder(
@@ -343,7 +257,9 @@ class DownloadCoordinator:
     
     def _log_student_list(self, student_data_list: List[dict]):
         """学生一覧をログ出力"""
-        self.progress.log_section(f"📋 検出された学生一覧 ({len(student_data_list)}人):")
+        self.progress.log_section(
+            f"📋 検出された学生一覧 ({len(student_data_list)}人):"
+        )
         self.progress.log("=" * 60)
         
         # 学生情報でソート
@@ -352,7 +268,9 @@ class DownloadCoordinator:
         
         with_info.sort(key=lambda x: (
             x['student_info'].class_code,
-            int(x['student_info'].attendance_number) if x['student_info'].attendance_number.isdigit() else 999
+            int(x['student_info'].attendance_number)
+            if x['student_info'].attendance_number.isdigit()
+            else 999
         ))
         without_info.sort(key=lambda x: x['sp_student'].folder_name)
         
@@ -362,7 +280,9 @@ class DownloadCoordinator:
         if without_info:
             self.progress.log("\n   名簿外の学生:")
             for idx, data in enumerate(without_info, 1):
-                self.progress.log(f"   {idx:2d}. {data['sp_student'].folder_name}")
+                self.progress.log(
+                    f"   {idx:2d}. {data['sp_student'].folder_name}"
+                )
         
         self.progress.log("=" * 60)
     

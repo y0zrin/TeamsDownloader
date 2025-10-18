@@ -16,11 +16,11 @@ from core.api_client import GraphAPIClient
 from core.cache import AssignmentCache
 from services.assignment import AssignmentService
 from services.downloader import DownloadService
+from services.submission_checker_service import SubmissionCheckerService  # 追加
 from gui.dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog, 
                          EditClassDialog, UnsubmittedStudentsDialog,
                          SelectStudentsDialog, FontSettingsDialog,
                          ProgressDialog)
-
 
 class ToolTip:
     """ツールチップ(マウスオーバーで表示されるヘルプテキスト)"""
@@ -109,6 +109,7 @@ class TeamsDownloaderGUI:
         self.assignment_cache = AssignmentCache(cache_hours=24)
         self.assignment_service = AssignmentService()
         self.download_service = DownloadService(self.api_client, self.assignment_cache)
+        self.submission_service = SubmissionCheckerService( self.api_client, self.assignment_cache )
         
         # フォント設定を読み込み(新機能2)
         self.font_config = self.assignment_cache.get_font_config()
@@ -774,7 +775,7 @@ class TeamsDownloaderGUI:
                     if "人" in msg or "進捗" in msg:
                         self.root.after(0, lambda m=msg: progress_dialog.update_detail(m))
                 
-                unsubmitted_list, error = self.download_service.get_unsubmitted_students(
+                unsubmitted_list, error = self.submission_service.get_unsubmitted_students(
                     selected_class,
                     assignment_name,
                     progress_callback=progress_callback
