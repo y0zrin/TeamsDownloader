@@ -27,3 +27,4 @@ encryption.key
 *.pyc
 /downloads
 /app/downloads
+*.pdf
