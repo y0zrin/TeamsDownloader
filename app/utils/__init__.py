@@ -1,7 +1,7 @@
 """
 ユーティリティ
 
-ファイル操作、暗号化などの汎用機能を提供
+ファイル操作、暗号化、例外などの汎用機能を提供
 """
 
 from .file_utils import (
@@ -16,6 +16,14 @@ from .crypto import (
     decrypt_data,
     get_or_create_encryption_key,
 )
+from .exceptions import (
+    TeamsDownloaderError,
+    AuthenticationError,
+    StudentNotFoundError,
+    DownloadCancelledError,
+    APIError,
+    CacheError,
+)
 
 __all__ = [
     'sanitize_filename',
@@ -26,4 +34,10 @@ __all__ = [
     'encrypt_data',
     'decrypt_data',
     'get_or_create_encryption_key',
+    'TeamsDownloaderError',
+    'AuthenticationError',
+    'StudentNotFoundError',
+    'DownloadCancelledError',
+    'APIError',
+    'CacheError',
 ]

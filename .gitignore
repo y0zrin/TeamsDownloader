@@ -25,9 +25,5 @@ bin-release/
 encryption.key
 *.key
 *.pyc
-/core/__pycache__
 /downloads
-/core/__pycache__
-core/__pycache__/__init__.cpython-311.pyc
 /app/downloads
-empty_commit.bat
