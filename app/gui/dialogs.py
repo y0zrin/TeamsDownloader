@@ -438,31 +438,37 @@ class SelectStudentsDialog:
         
         ttk.Label(
             title_frame,
-            text="Ctrl/Shiftキーで複数選択できます",
+            text=f"クラス: {current_class_name}",
+            font=("", 10),
+            foreground="blue"
+        ).pack(pady=5)
+        
+        ttk.Label(
+            title_frame,
+            text="複数選択可能です。Ctrlキーを押しながらクリックしてください。",
             font=("", 9),
             foreground="gray"
-        ).pack(pady=5)
+        ).pack()
         
         # 検索バー
         search_frame = ttk.Frame(self.dialog, padding="10")
         search_frame.pack(fill=tk.X)
         
-        ttk.Label(search_frame, text="🔍").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(search_frame, text="🔍 検索:").pack(side=tk.LEFT, padx=(0, 5))
         
         self.search_var = tk.StringVar()
-        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("", 10))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.search_var.trace('w', self._filter_list)
+        self.search_entry.focus()
         
-        # リストフレーム
+        # 学生リスト
         list_frame = ttk.Frame(self.dialog, padding="10")
         list_frame.pack(fill=tk.BOTH, expand=True)
         
-        # スクロールバー
         scrollbar = ttk.Scrollbar(list_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # リストボックス
         self.listbox = tk.Listbox(
             list_frame,
             yscrollcommand=scrollbar.set,
@@ -472,51 +478,79 @@ class SelectStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # 学生情報を格納（全学生）
+        # 学生データを保持（current_class_nameに対応するclass_codeでフィルタ）
         self.all_students = []
         
-        # 学生情報からリストを作成
-        if students_info:
+        # キャッシュから該当クラスのclass_codeリストを取得
+        from core.cache import AssignmentCache
+        cache = AssignmentCache()
+        class_codes_list = cache.get_class_codes(current_class_name)
+        
+        # class_codesが取得できた場合はそれを使用、できない場合は全学生を表示
+        if class_codes_list:
+            # 該当クラスのclass_codeのみを含む学生を追加
+            valid_codes = set(class_codes_list)
             for name_key, info in students_info.items():
                 if isinstance(info, list):
-                    # 複数クラス記号を持つ学生 - 最初のものを追加
-                    self.all_students.append(info[0])
+                    # 複数クラスの場合
+                    for item in info:
+                        if item.get('class_code') in valid_codes:
+                            self.all_students.append(item)
+                else:
+                    # 単一クラスの場合
+                    if info.get('class_code') in valid_codes:
+                        self.all_students.append(info)
+        else:
+            # キャッシュにclass_codesがない場合は全学生を表示
+            for name_key, info in students_info.items():
+                if isinstance(info, list):
+                    for item in info:
+                        self.all_students.append(item)
                 else:
                     self.all_students.append(info)
-            
-            # ソート
-            self.all_students.sort(key=lambda x: (x.get('class_code', ''), int(x.get('attendance_number', 0)) if x.get('attendance_number', '').isdigit() else 999))
         
-        # リストに追加
+        # クラス記号、出席番号でソート
+        self.all_students.sort(key=lambda x: (
+            x.get('class_code', ''), 
+            int(x.get('attendance_number', 0)) if str(x.get('attendance_number', '')).isdigit() else 999
+        ))
+        
         self._populate_list()
         
-        # 選択ボタン
-        selection_frame = ttk.Frame(self.dialog, padding="5")
-        selection_frame.pack(fill=tk.X)
+        # 選択状況表示
+        status_frame = ttk.Frame(self.dialog, padding="5")
+        status_frame.pack(fill=tk.X)
+        
+        self.count_label = ttk.Label(
+            status_frame,
+            text="0人選択中",
+            font=("", 9),
+            foreground="gray"
+        )
+        self.count_label.pack(side=tk.LEFT, padx=10)
         
         ttk.Button(
-            selection_frame,
+            status_frame,
             text="全選択",
             command=self._select_all,
-            width=12
+            width=10
         ).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(
-            selection_frame,
+            status_frame,
             text="選択解除",
             command=self._deselect_all,
-            width=12
+            width=10
         ).pack(side=tk.LEFT, padx=5)
         
-        # 確認ボタン
-        button_frame = ttk.Frame(self.dialog)
-        button_frame.pack(pady=15, side=tk.BOTTOM)
+        # ボタンフレーム
+        button_frame = ttk.Frame(self.dialog, padding="15")
+        button_frame.pack(fill=tk.X)
         
         self.count_label = ttk.Label(
             button_frame,
             text="0人選択中",
-            font=("", 9),
-            foreground="blue"
+            font=("", 9)
         )
         self.count_label.pack(side=tk.LEFT, padx=10)
         
@@ -597,27 +631,15 @@ class SelectStudentsDialog:
             self.selected_students = []
             for idx in selected_indices:
                 # 現在表示されているリストから該当する学生情報を取得
-                display_text = self.listbox.get(idx)
-                
-                # 表示テキストから学生情報を逆引き
-                for student_info in self.all_students:
-                    class_code = student_info.get('class_code', '')
-                    attendance_num = student_info.get('attendance_number', '')
-                    name = student_info.get('student_name', student_info.get('name', ''))
-                    
-                    try:
-                        num_str = f"{int(attendance_num):02d}"
-                    except:
-                        num_str = str(attendance_num)
-                    
-                    expected_text = f"[{class_code}] {num_str} {name}"
-                    
-                    if expected_text == display_text:
-                        # clean_student_name相当の処理を適用した名前を返す
-                        from utils.file_utils import clean_student_name
-                        cleaned_name = clean_student_name(name)
-                        self.selected_students.append(cleaned_name)
-                        break
+                # インデックスから直接all_studentsの該当学生を取得
+                if idx < len(self.all_students):
+                    student_info = self.all_students[idx]
+                    # class_codeとattendance_numberのタプルを返す
+                    self.selected_students.append({
+                        'class_code': student_info.get('class_code'),
+                        'attendance_number': student_info.get('attendance_number'),
+                        'student_name': student_info.get('student_name')
+                    })
         
         self.dialog.destroy()
     

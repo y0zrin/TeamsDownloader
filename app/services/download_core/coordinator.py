@@ -115,14 +115,38 @@ class DownloadCoordinator:
     def _filter_students(
         self,
         sharepoint_students: List[SharePointStudent],
-        selected_students: List[str]
+        selected_students: List[dict]  # 型をdictのリストに変更
     ) -> List[SharePointStudent]:
-        """特定学生でフィルタリング"""
-        selected_set = set(selected_students)
-        return [
-            s for s in sharepoint_students
-            if s.cleaned_name in selected_set
-        ]
+        """特定学生でフィルタリング（class_code + attendance_numberで照合）"""
+        if not selected_students:
+            return sharepoint_students
+        
+        # 選択された学生のclass_code + attendance_numberのセットを作成
+        selected_keys = set()
+        for s in selected_students:
+            key = (s.get('class_code'), str(s.get('attendance_number')))
+            selected_keys.add(key)
+        
+        # StudentMatcherを使って各SharePoint学生を名簿と照合
+        filtered = []
+        students_info = self.cache.get_students_info()
+        if not students_info:
+            return sharepoint_students
+        
+        student_matcher = StudentMatcher(self.cache, students_info)
+        
+        for sp_student in sharepoint_students:
+            # 学生情報を照合（IDマッピング考慮）
+            student_info = student_matcher.match_student(
+                sp_student, "", None, None
+            )
+            
+            if student_info:
+                key = (student_info.class_code, str(student_info.attendance_number))
+                if key in selected_keys:
+                    filtered.append(sp_student)
+        
+        return filtered
     
     def _execute_download(
         self,
