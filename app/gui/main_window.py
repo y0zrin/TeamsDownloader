@@ -959,13 +959,20 @@ class TeamsDownloaderGUI:
                 )
                 return dialog.show()
             
+            # ★ 追加: 名前マッピングダイアログのコールバック
+            def name_mapping_dialog_callback(student_name, students_info):
+                from gui.dialogs import NameMappingDialog
+                dialog = NameMappingDialog(self.root, student_name, students_info)
+                return dialog.show()
+
             download_count, student_count = self.download_service.download_assignment(
                 selected_class,
                 assignment_name,
                 output_folder,
                 progress_callback=self.log,
                 class_code_dialog_callback=class_code_dialog_callback,
-                selected_students=selected_students
+                selected_students=selected_students,
+                name_mapping_dialog_callback=name_mapping_dialog_callback  # ★ 追加
             )
             
             if not self.download_service.cancelled and student_count > 0:

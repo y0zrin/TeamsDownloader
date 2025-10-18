@@ -198,7 +198,8 @@ class DownloadService:
         output_base_dir: str,
         progress_callback: Optional[Callable[[str], None]] = None,
         class_code_dialog_callback: Optional[Callable] = None,
-        selected_students: Optional[List[str]] = None
+        selected_students: Optional[List[str]] = None,
+        name_mapping_dialog_callback: Optional[Callable] = None
     ) -> Tuple[int, int]:
         """課題をダウンロード
         
@@ -213,7 +214,8 @@ class DownloadService:
             output_base_dir,
             progress_callback,
             class_code_dialog_callback,
-            selected_students
+            selected_students,
+            name_mapping_dialog_callback
         )
         
         return result.file_count, result.student_count

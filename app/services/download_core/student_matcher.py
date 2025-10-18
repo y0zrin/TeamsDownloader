@@ -21,7 +21,8 @@ class StudentMatcher:
         self,
         sharepoint_student: SharePointStudent,
         class_name: str,
-        class_code_dialog_callback: Optional[Callable] = None
+        class_code_dialog_callback: Optional[Callable] = None,
+        name_mapping_dialog_callback: Optional[Callable] = None
     ) -> Optional[Student]:
         """SharePoint上の学生を名簿と照合
         
@@ -29,6 +30,7 @@ class StudentMatcher:
             sharepoint_student: SharePoint上の学生情報
             class_name: クラス名
             class_code_dialog_callback: クラス記号選択ダイアログのコールバック
+            name_mapping_dialog_callback: 名前マッピングダイアログのコールバック
         
         Returns:
             照合された学生情報（見つからない場合はNone）
@@ -42,11 +44,21 @@ class StudentMatcher:
             if cached_mapping.is_excluded:
                 return None
             if cached_mapping.is_mapped:
-                return cached_mapping.mapped_student
+                # マッピングされた学生を検索
+                student = self.find_student_by_mapping(cached_mapping)
+                if student:
+                    return student
+                # マッピングされた学生が見つからない場合は名前照合に進む
         
         # 2. 名前で照合
         name_key = sharepoint_student.name_key
         if name_key not in self.students_info:
+            # 名前で見つからない場合、マッピングダイアログを表示
+            if name_mapping_dialog_callback:
+                return self._show_name_mapping_dialog(
+                    sharepoint_student,
+                    name_mapping_dialog_callback
+                )
             return None
         
         # 3. 単一/複数クラス記号の処理
@@ -105,6 +117,31 @@ class StudentMatcher:
         
         # デフォルトは最初のクラス記号
         return Student.from_dict(matched_list[0])
+    
+    def _show_name_mapping_dialog(
+        self,
+        sharepoint_student: SharePointStudent,
+        name_mapping_dialog_callback: Callable
+    ) -> Optional[Student]:
+        """名前マッピングダイアログを表示"""
+        # ダイアログを表示（NameMappingDialogが返す値を処理）
+        selected = name_mapping_dialog_callback(
+            sharepoint_student.folder_name,
+            self.students_info
+        )
+        
+        if selected == "EXCLUDED":
+            # 除外として保存
+            self.save_mapping(sharepoint_student.folder_id, sharepoint_student.folder_name, None)
+            return None
+        elif selected and isinstance(selected, dict):
+            # 学生情報が選択された
+            student = Student.from_dict(selected)
+            self.save_mapping(sharepoint_student.folder_id, sharepoint_student.folder_name, student)
+            return student
+        
+        # スキップ
+        return None
     
     def save_mapping(self, folder_id: str, folder_name: str, student: Optional[Student] = None):
         """マッピングを保存"""

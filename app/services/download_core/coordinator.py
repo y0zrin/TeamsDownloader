@@ -31,7 +31,8 @@ class DownloadCoordinator:
         output_base_dir: str,
         progress_callback: Optional[Callable[[str], None]] = None,
         class_code_dialog_callback: Optional[Callable] = None,
-        selected_students: Optional[List[str]] = None
+        selected_students: Optional[List[str]] = None,
+        name_mapping_dialog_callback: Optional[Callable] = None
     ) -> DownloadResult:
         """課題をダウンロード
         
@@ -85,7 +86,8 @@ class DownloadCoordinator:
                 output_folder,
                 class_config['name'],
                 student_matcher,
-                class_code_dialog_callback
+                class_code_dialog_callback,
+                name_mapping_dialog_callback
             )
             
             # 結果出力
@@ -225,7 +227,8 @@ class DownloadCoordinator:
         output_folder: str,
         class_name: str,
         student_matcher: Optional[StudentMatcher],
-        class_code_dialog_callback: Optional[Callable]
+        class_code_dialog_callback: Optional[Callable],
+        name_mapping_dialog_callback: Optional[Callable]
     ) -> DownloadResult:
         """ダウンロードを実行"""
         result = DownloadResult(0, 0, output_folder)
@@ -266,7 +269,7 @@ class DownloadCoordinator:
                 student_info = None
                 if student_matcher:
                     student_info = student_matcher.match_student(
-                        sp_student, class_name, class_code_dialog_callback
+                        sp_student, class_name, class_code_dialog_callback, name_mapping_dialog_callback
                     )
                 
                 student_data_list.append({
