@@ -1,0 +1,7 @@
+"""
+アプリケーション状態管理
+"""
+
+from .app_state import AppState
+
+__all__ = ['AppState']
