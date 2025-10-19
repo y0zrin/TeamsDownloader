@@ -6,11 +6,11 @@
 
 import os
 import threading
+import tkinter as tk
 from tkinter import messagebox
 from gui.dialogs import (ClassCodeSelectionDialog, UnsubmittedStudentsDialog,
                          SelectStudentsDialog, ProgressDialog, NameMappingDialog,
                          DownloadCompleteDialog)
-
 
 class DownloadHandler:
     """ダウンロードハンドラ"""
@@ -45,6 +45,7 @@ class DownloadHandler:
             messagebox.showwarning("警告", "クラスを選択してください")
             return
         
+        # 課題選択チェックと課題名取得
         selection = self.ui_callbacks['get_assignment_selection']()
         if not selection:
             messagebox.showwarning("警告", "課題を選択してください")
@@ -67,7 +68,7 @@ class DownloadHandler:
         )
         self.state.download_thread.daemon = True
         self.state.download_thread.start()
-    
+
     def cancel_download(self):
         """ダウンロードをキャンセル"""
         if messagebox.askyesno("確認", "ダウンロードをキャンセルしますか?"):
@@ -162,10 +163,14 @@ class DownloadHandler:
             messagebox.showwarning("警告", "クラスを選択してください")
             return
         
+        # 課題選択を先にチェックして保存
         selection = assignment_listbox.curselection()
         if not selection:
             messagebox.showwarning("警告", "課題を選択してください")
             return
+        
+        # 選択された課題のインデックスを保存
+        selected_assignment_index = selection[0]
         
         students_info = self.cache.get_students_info()
         
@@ -195,6 +200,11 @@ class DownloadHandler:
         selected_students = dialog.show()
         
         if selected_students:
+            # ダイアログから戻った後、課題の選択を復元
+            assignment_listbox.selection_clear(0, tk.END)
+            assignment_listbox.selection_set(selected_assignment_index)
+            assignment_listbox.see(selected_assignment_index)
+            
             self.log(f"👥 {len(selected_students)}人を選択してダウンロードを開始")
             self.download_selected_assignment(selected_students)
                 
