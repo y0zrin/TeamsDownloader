@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-学生管理関連ダイアログ
+学生管理関連ダイアログ（リファクタリング版）
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from models.student import format_student_display, sort_students
+from utils.student_selector import filter_students_by_class
+from gui.dialogs.dialog_utils import create_centered_dialog
 
 try:
     import pyperclip
@@ -17,16 +20,7 @@ except ImportError:
 class UnsubmittedStudentsDialog:
     """未提出者一覧ダイアログ"""
     def __init__(self, parent, class_name, assignment_name, unsubmitted_list):
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("未提出者一覧")
-        self.dialog.geometry("600x500")
-        self.dialog.transient(parent)
-        
-        # センタリング
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - 300
-        y = (self.dialog.winfo_screenheight() // 2) - 250
-        self.dialog.geometry(f"600x500+{x}+{y}")
+        self.dialog = create_centered_dialog(parent, "未提出者一覧", 600, 500)
         
         # タイトル
         title_frame = ttk.Frame(self.dialog, padding="10")
@@ -69,18 +63,9 @@ class UnsubmittedStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # 未提出者をリストに追加
+        # 未提出者をリストに追加（共通関数を使用）
         for student_info in unsubmitted_list:
-            class_code = student_info.get('class_code', '')
-            attendance_num = student_info.get('attendance_number', '')
-            name = student_info.get('student_name', student_info.get('name', ''))
-            
-            try:
-                num_str = f"{int(attendance_num):02d}"
-            except:
-                num_str = str(attendance_num)
-            
-            display_text = f"[{class_code}] {num_str} {name}"
+            display_text = format_student_display(student_info)
             self.listbox.insert(tk.END, display_text)
         
         # ボタンフレーム
@@ -130,17 +115,7 @@ class SelectStudentsDialog:
     """特定学生選択ダイアログ（全学生表示版）"""
     def __init__(self, parent, students_info, current_class_name):
         self.selected_students = None
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("ダウンロード対象学生を選択")
-        self.dialog.geometry("500x620")
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # センタリング
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - 250
-        y = (self.dialog.winfo_screenheight() // 2) - 310
-        self.dialog.geometry(f"500x620+{x}+{y}")
+        self.dialog = create_centered_dialog(parent, "ダウンロード対象学生を選択", 500, 620)
         
         # タイトル
         title_frame = ttk.Frame(self.dialog, padding="10")
@@ -194,44 +169,14 @@ class SelectStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # 学生データを保持
-        self.all_students = []
-        
-        # クラス名からクラス記号候補を抽出
-        class_name_parts = set(current_class_name.split('-'))
-        
+        # 学生データをフィルタリングしてソート（共通関数を使用）
         from core.cache import AssignmentCache
         cache = AssignmentCache()
         
-        for name_key, info in students_info.items():
-            if isinstance(info, list):
-                # 複数クラス記号を持つ学生の場合
-                cached_selection = cache.get_class_code_selection(current_class_name, info[0].get('student_name'))
-                
-                if cached_selection:
-                    # 選択履歴があり、かつクラス名に一致する場合のみ追加
-                    if cached_selection in class_name_parts:
-                        selected_info = next((item for item in info if item.get('class_code') == cached_selection), None)
-                        if selected_info:
-                            self.all_students.append(selected_info)
-                else:
-                    # クラス名と一致するクラス記号を探す
-                    for item in info:
-                        code = item.get('class_code', '')
-                        if code in class_name_parts:
-                            self.all_students.append(item)
-                            break
-            else:
-                # 単一クラス記号の場合
-                code = info.get('class_code', '')
-                if code in class_name_parts:
-                    self.all_students.append(info)
-        
-        # クラス記号、出席番号でソート
-        self.all_students.sort(key=lambda x: (
-            x.get('class_code', ''), 
-            int(x.get('attendance_number', 0)) if str(x.get('attendance_number', '')).isdigit() else 999
-        ))
+        self.all_students = filter_students_by_class(
+            students_info, current_class_name, cache
+        )
+        self.all_students = sort_students(self.all_students)
         
         self._populate_list()
         
@@ -283,23 +228,14 @@ class SelectStudentsDialog:
         self.listbox.bind('<<ListboxSelect>>', self._on_selection_changed)
     
     def _populate_list(self, students=None):
-        """リストを更新"""
+        """リストを更新（共通関数を使用）"""
         self.listbox.delete(0, tk.END)
         
         if students is None:
             students = self.all_students
         
         for student_info in students:
-            class_code = student_info.get('class_code', '')
-            attendance_num = student_info.get('attendance_number', '')
-            name = student_info.get('student_name', student_info.get('name', ''))
-            
-            try:
-                num_str = f"{int(attendance_num):02d}"
-            except:
-                num_str = str(attendance_num)
-            
-            display_text = f"[{class_code}] {num_str} {name}"
+            display_text = format_student_display(student_info)
             self.listbox.insert(tk.END, display_text)
     
     def _filter_list(self, *args):
@@ -366,17 +302,7 @@ class NameMappingDialog:
     """SharePoint名と名簿名の紐付けダイアログ"""
     def __init__(self, parent, sharepoint_name, students_info):
         self.selected_student = None
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("学生名の紐付け")
-        self.dialog.geometry("600x550")
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # センタリング
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - 300
-        y = (self.dialog.winfo_screenheight() // 2) - 275
-        self.dialog.geometry(f"600x550+{x}+{y}")
+        self.dialog = create_centered_dialog(parent, "学生名の紐付け", 600, 550)
         
         # タイトル
         title_frame = ttk.Frame(self.dialog, padding="15")
@@ -443,7 +369,7 @@ class NameMappingDialog:
         # ダブルクリックで選択
         self.listbox.bind('<Double-Button-1>', lambda e: self._on_select())
         
-        # 学生データを保持
+        # 学生データを準備してソート（共通関数を使用）
         self.all_students = []
         for name_key, info in students_info.items():
             if isinstance(info, list):
@@ -453,11 +379,7 @@ class NameMappingDialog:
             else:
                 self.all_students.append(info)
         
-        # クラス記号、出席番号でソート
-        self.all_students.sort(key=lambda x: (
-            x.get('class_code', ''), 
-            int(x.get('attendance_number', 0)) if str(x.get('attendance_number', '')).isdigit() else 999
-        ))
+        self.all_students = sort_students(self.all_students)
         
         self._populate_list()
         
@@ -493,22 +415,13 @@ class NameMappingDialog:
         ).pack(expand=True, fill=tk.X)
     
     def _populate_list(self, students=None):
-        """リストを更新"""
+        """リストを更新（共通関数を使用）"""
         self.listbox.delete(0, tk.END)
         if students is None:
             students = self.all_students
         
         for student in students:
-            class_code = student.get('class_code', '')
-            name = student.get('student_name', '')
-            attendance = student.get('attendance_number', '')
-            
-            try:
-                attendance_str = f"{int(attendance):02d}"
-            except:
-                attendance_str = str(attendance)
-            
-            display = f"[{class_code}] {attendance_str} {name}"
+            display = format_student_display(student)
             self.listbox.insert(tk.END, display)
     
     def _filter_list(self, *args):

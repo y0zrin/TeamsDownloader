@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-未提出者確認サービス
+未提出者確認サービス（リファクタリング版）
 
 課題の提出状況を確認し、未提出者リストを返す
 """
@@ -10,7 +10,8 @@ from typing import List, Tuple, Optional, Callable
 from services.download_core.assignment_accessor import AssignmentAccessor
 from services.download_core.student_matcher import StudentMatcher
 from services.download_core.progress_tracker import ProgressTracker
-from utils.file_utils import clean_student_name
+from models.student import sort_students
+from utils.student_selector import select_class_code_for_student
 
 
 class SubmissionChecker:
@@ -101,9 +102,8 @@ class SubmissionChecker:
         class_name: str,
         progress: ProgressTracker
     ) -> dict:
-        """SharePoint上の学生を名簿と照合"""
+        """SharePoint上の学生を名簿と照合（共通関数を使用）"""
         current_class_students = {}
-        multi_class_students = self.cache.get_multi_class_students()
         
         # SharePoint上の学生名からユニークなキーを生成
         sp_names = {sp.name_key: sp.folder_name for sp in sharepoint_students}
@@ -115,30 +115,24 @@ class SubmissionChecker:
             matched = students_info[name_key]
             
             if isinstance(matched, list):
-                # 複数クラス記号を持つ学生
+                # 複数クラス記号を持つ学生の場合（共通関数を使用）
                 cached_selection = self.cache.get_class_code_selection(
                     class_name, student_name
                 )
                 
+                selected_info = select_class_code_for_student(
+                    matched, class_name, cached_selection
+                )
+                
+                current_class_students[name_key] = selected_info
+                
                 if cached_selection:
-                    student_info = next(
-                        (s for s in matched if s['class_code'] == cached_selection),
-                        None
-                    )
-                    if student_info:
-                        current_class_students[name_key] = student_info
-                        progress.log(
-                            f"   ✓ {student_name}: {cached_selection} (選択履歴)"
-                        )
-                    else:
-                        current_class_students[name_key] = matched[0]
-                        progress.log(
-                            f"   ✓ {student_name}: {matched[0]['class_code']} (デフォルト)"
-                        )
-                else:
-                    current_class_students[name_key] = matched[0]
                     progress.log(
-                        f"   ✓ {student_name}: {matched[0]['class_code']} (デフォルト)"
+                        f"   ✓ {student_name}: {selected_info['class_code']} (選択履歴)"
+                    )
+                else:
+                    progress.log(
+                        f"   ✓ {student_name}: {selected_info['class_code']} (自動選択)"
                     )
             else:
                 current_class_students[name_key] = matched
@@ -198,19 +192,14 @@ class SubmissionChecker:
         submitted_students: set,
         progress: ProgressTracker
     ) -> List[dict]:
-        """未提出者を抽出してソート"""
+        """未提出者を抽出してソート（共通関数を使用）"""
         unsubmitted = []
         for name_key, student_info in current_class_students.items():
             if name_key not in submitted_students:
                 unsubmitted.append(student_info)
         
-        # 出席番号順にソート
-        unsubmitted.sort(key=lambda x: (
-            x.get('class_code', ''),
-            int(x.get('attendance_number', 0))
-            if x.get('attendance_number', '').isdigit()
-            else 999
-        ))
+        # 共通関数を使用してソート
+        unsubmitted = sort_students(unsubmitted)
         
         progress.log(f"📋 未提出者: {len(unsubmitted)}人")
         

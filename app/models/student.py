@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 @dataclass
@@ -48,8 +48,50 @@ class Student:
         """フォルダ名を取得（出席番号_氏名）"""
         return f"{self.formatted_attendance_number}_{self.student_name}"
     
-    def __str__(self) -> str:
+    def get_display_text(self) -> str:
+        """表示用テキストを取得（[クラス記号] 出席番号 氏名）"""
         return f"[{self.class_code}] {self.formatted_attendance_number} {self.student_name}"
+    
+    def __str__(self) -> str:
+        return self.get_display_text()
+
+
+def format_student_display(student_dict: dict) -> str:
+    """辞書形式の学生情報から表示用テキストを生成
+    
+    Args:
+        student_dict: 学生情報辞書 (class_code, attendance_number, student_name or name)
+    
+    Returns:
+        表示用テキスト
+    """
+    class_code = student_dict.get('class_code', '')
+    attendance_num = student_dict.get('attendance_number', '')
+    name = student_dict.get('student_name', student_dict.get('name', ''))
+    
+    try:
+        num_str = f"{int(attendance_num):02d}"
+    except (ValueError, TypeError):
+        num_str = str(attendance_num)
+    
+    return f"[{class_code}] {num_str} {name}"
+
+
+def sort_students(students: List[dict]) -> List[dict]:
+    """学生リストをクラス記号・出席番号順にソート
+    
+    Args:
+        students: 学生情報辞書のリスト
+    
+    Returns:
+        ソート済みの学生リスト
+    """
+    return sorted(students, key=lambda x: (
+        x.get('class_code', ''),
+        int(x.get('attendance_number', 0)) 
+        if str(x.get('attendance_number', '')).isdigit() 
+        else 999
+    ))
 
 
 @dataclass

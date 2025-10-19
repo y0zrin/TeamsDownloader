@@ -107,139 +107,132 @@ class AssignmentService:
             return self.config["classes"][index]
         return None
     
-def scan_assignments(self, api_client, class_config, cache_manager, progress_callback=None):
-    """課題一覧をスキャン（クラス記号も収集）"""
-    def log(msg):
-        if progress_callback:
-            progress_callback(msg)
+    def scan_assignments(self, api_client, class_config, cache_manager, progress_callback=None):
+        """課題一覧をスキャン（クラス記号も収集）- リファクタリング版"""
+        def log(msg):
+            if progress_callback:
+                progress_callback(msg)
+            else:
+                print(msg)
+        
+        class_config = self.migrate_old_config(class_config)
+        
+        # サイトIDを取得
+        site_id = api_client.get_site_id(class_config["site_path"])
+        if not site_id:
+            log("❌ サイトIDの取得に失敗")
+            return []
+        
+        # ドライブIDを取得
+        drive_id, drive_name = api_client.get_drive_id(site_id)
+        if not drive_id:
+            log("❌ ドライブIDの取得に失敗")
+            return []
+        
+        log("✅ SharePointに接続しました")
+        
+        # ベースフォルダを設定
+        if drive_name == "Student Work":
+            base_folder = "Working files"
         else:
-            print(msg)
-    
-    class_config = self.migrate_old_config(class_config)
-    
-    # サイトIDを取得
-    site_id = api_client.get_site_id(class_config["site_path"])
-    if not site_id:
-        log("❌ サイトIDの取得に失敗")
-        return []
-    
-    # ドライブIDを取得
-    drive_id, drive_name = api_client.get_drive_id(site_id)
-    if not drive_id:
-        log("❌ ドライブIDの取得に失敗")
-        return []
-    
-    log("✅ SharePointに接続しました")
-    
-    # ベースフォルダを設定
-    if drive_name == "Student Work":
-        base_folder = "Working files"
-    else:
-        base_folder = "Student Work/Working files"
-    
-    log(f"📂 フォルダパス: {drive_name}/{base_folder}")
-    
-    # 学生フォルダを取得
-    student_folders = api_client.get_student_folders(drive_id, base_folder)
-    total_students = len(student_folders)
-    
-    log(f"👥 全{total_students}人の学生フォルダを検出")
-    
-    # 学生リストを作成してキャッシュ
-    students_list = []
-    for student_folder in student_folders:
-        students_list.append({
-            'name': student_folder['name'],
-            'id': student_folder['id']
-        })
-    
-    # 学生リストをキャッシュに保存
-    cache_manager.set_students_list(class_config['name'], students_list)
-    log(f"💾 {total_students}人の学生リストをキャッシュに保存")
-    
-    # クラス記号を収集
-    from utils.file_utils import clean_student_name
-    students_info = cache_manager.get_students_info()
-    collected_class_codes = set()
-    
-    if students_info:
-        log(f"\n🔍 クラス記号を収集中...")
+            base_folder = "Student Work/Working files"
+        
+        log(f"📂 フォルダパス: {drive_name}/{base_folder}")
+        
+        # 学生フォルダを取得
+        student_folders = api_client.get_student_folders(drive_id, base_folder)
+        total_students = len(student_folders)
+        
+        log(f"👥 全{total_students}人の学生フォルダを検出")
+        
+        # 学生リストを作成してキャッシュ
+        students_list = []
         for student_folder in student_folders:
-            student_name = student_folder['name']
-            cleaned_name = clean_student_name(student_name)
-            name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
-            
-            if name_key in students_info:
-                info = students_info[name_key]
-                if isinstance(info, list):
-                    # 複数クラス記号を持つ学生の場合
-                    # 1. 選択履歴をチェック
-                    cached_selection = cache_manager.get_class_code_selection(class_config['name'], student_name)
-                    if cached_selection:
-                        collected_class_codes.add(cached_selection)
-                    else:
-                        # 2. クラス名と一致するクラス記号を探す
-                        class_name_parts = class_config['name'].split('-')
-                        matched_code = None
-                        for item in info:
-                            code = item.get('class_code', '')
-                            if code in class_name_parts:
-                                matched_code = code
-                                break
+            students_list.append({
+                'name': student_folder['name'],
+                'id': student_folder['id']
+            })
+        
+        # 学生リストをキャッシュに保存
+        cache_manager.set_students_list(class_config['name'], students_list)
+        log(f"💾 {total_students}人の学生リストをキャッシュに保存")
+        
+        # クラス記号を収集（共通関数を使用）
+        from utils.file_utils import clean_student_name
+        from utils.student_selector import get_class_codes_from_students
+        
+        students_info = cache_manager.get_students_info()
+        collected_class_codes = set()
+        
+        if students_info:
+            log(f"\n🔍 クラス記号を収集中...")
+            for student_folder in student_folders:
+                student_name = student_folder['name']
+                cleaned_name = clean_student_name(student_name)
+                name_key = cleaned_name.replace(' ', '').replace('　', '').strip()
+                
+                if name_key in students_info:
+                    info = students_info[name_key]
+                    if isinstance(info, list):
+                        # 複数クラス記号を持つ学生の場合（共通関数を使用）
+                        cached_selection = cache_manager.get_class_code_selection(
+                            class_config['name'], student_name
+                        )
                         
-                        if matched_code:
-                            collected_class_codes.add(matched_code)
-                        else:
-                            # 一致するものがなければ最初のクラス記号（フォールバック）
-                            collected_class_codes.add(info[0].get('class_code', ''))
-                else:
-                    # 単一クラス記号
-                    collected_class_codes.add(info.get('class_code', ''))
+                        selected_code = get_class_codes_from_students(
+                            info, class_config['name'], cached_selection
+                        )
+                        
+                        if selected_code:
+                            collected_class_codes.add(selected_code)
+                    else:
+                        # 単一クラス記号
+                        collected_class_codes.add(info.get('class_code', ''))
+            
+            # 空文字を除外
+            collected_class_codes.discard('')
+            
+            if collected_class_codes:
+                cache_manager.set_class_codes(class_config['name'], list(collected_class_codes))
+                log(f"✅ クラス記号を検出: {sorted(collected_class_codes)}")
         
-        # 空文字を除外
-        collected_class_codes.discard('')
+        # 各学生フォルダから課題を収集
+        assignments_set = set()
         
-        if collected_class_codes:
-            cache_manager.set_class_codes(class_config['name'], list(collected_class_codes))
-            log(f"✅ クラス記号を検出: {sorted(collected_class_codes)}")
-    
-    # 各学生フォルダから課題を収集
-    assignments_set = set()
-    
-    log(f"\n🔍 課題フォルダスキャン開始...")
-    log(f"   進捗状況を5人ごとに表示します")
-    log("")
-    
-    scanned_count = 0
-    for student_folder in student_folders:
-        scanned_count += 1
+        log(f"\n🔍 課題フォルダスキャン開始...")
+        log(f"   進捗状況を5人ごとに表示します")
+        log("")
         
-        student_name = student_folder['name']
+        scanned_count = 0
+        for student_folder in student_folders:
+            scanned_count += 1
+            
+            student_name = student_folder['name']
+            
+            # 進捗ログ(5人ごと + 処理中の学生名を常時表示)
+            if scanned_count % 5 == 0:
+                progress_msg = f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了 (処理中: {student_name})"
+                log(progress_msg)
+            elif scanned_count == 1:
+                # 最初の1人目は必ず表示
+                log(f"   🔍 スキャン中: 1人目 {student_name}")
+            elif scanned_count == total_students:
+                # 最後の1人も必ず表示
+                log(f"   🔍 スキャン中: {scanned_count}/{total_students}人目 {student_name} (最終)")
+            
+            student_path = f"{base_folder}/{student_folder['name']}"
+            assignment_folders = api_client.get_assignment_folders(drive_id, student_path)
+            
+            for folder in assignment_folders:
+                assignments_set.add(folder["name"])
         
-        # 進捗ログ(5人ごと + 処理中の学生名を常時表示)
-        if scanned_count % 5 == 0:
-            progress_msg = f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了 (処理中: {student_name})"
-            log(progress_msg)
-        elif scanned_count == 1:
-            # 最初の1人目は必ず表示
-            log(f"   🔍 スキャン中: 1人目 {student_name}")
-        elif scanned_count == total_students:
-            # 最後の1人も必ず表示
-            log(f"   🔍 スキャン中: {scanned_count}/{total_students}人目 {student_name} (最終)")
+        # 最終進捗を表示
+        if scanned_count > 0:
+            log(f"\n   ✅ スキャン完了: {scanned_count}/{total_students}人")
         
-        student_path = f"{base_folder}/{student_folder['name']}"
-        assignment_folders = api_client.get_assignment_folders(drive_id, student_path)
+        # キャッシュを更新
+        sorted_assignments = sorted(list(assignments_set))
+        cache_manager.set(class_config['name'], sorted_assignments)
+        log(f"✅ フルスキャン完了: {len(sorted_assignments)}個の課題を検出")
         
-        for folder in assignment_folders:
-            assignments_set.add(folder["name"])
-    
-    # 最終進捗を表示
-    if scanned_count > 0:
-        log(f"\n   ✅ スキャン完了: {scanned_count}/{total_students}人")
-    
-    # キャッシュを更新
-    sorted_assignments = sorted(list(assignments_set))
-    cache_manager.set(class_config['name'], sorted_assignments)
-    log(f"✅ フルスキャン完了: {len(sorted_assignments)}個の課題を検出")
-    
-    return sorted_assignments
+        return sorted_assignments

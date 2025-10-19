@@ -1,28 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-設定関連ダイアログ
+設定関連ダイアログ（リファクタリング版）
 """
 
 import tkinter as tk
 from tkinter import ttk
+from gui.dialogs.dialog_utils import create_centered_dialog
 
 
 class FontSettingsDialog:
     """フォント設定ダイアログ"""
     def __init__(self, parent, current_size):
         self.selected_size = None
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("フォント設定")
-        self.dialog.geometry("380x350")
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # センタリング
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - 190
-        y = (self.dialog.winfo_screenheight() // 2) - 175
-        self.dialog.geometry(f"380x350+{x}+{y}")
+        self.dialog = create_centered_dialog(parent, "フォント設定", 380, 350)
         
         # メインフレーム
         main_frame = ttk.Frame(self.dialog, padding="20")
