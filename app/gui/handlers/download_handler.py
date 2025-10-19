@@ -90,7 +90,7 @@ class DownloadHandler:
         selected_class = classes[self.state.get_selected_class_index()]
         
         # プログレスダイアログを表示
-        progress_dialog = ProgressDialog(
+        initial_progress_dialog = ProgressDialog(
             self.root,
             "未提出者確認中",
             f"「{assignment_name}」の未提出者を確認しています..."
@@ -98,10 +98,25 @@ class DownloadHandler:
         
         def fetch_unsubmitted():
             try:
+                # 認証チェック
+                if not self.auth_manager.access_token:
+                    self.root.after(0, lambda: initial_progress_dialog.close())
+                    if not self.ui_callbacks['authenticate']():
+                        return
+                    # 認証後、プログレスダイアログを再表示
+                    active_progress_dialog = ProgressDialog(
+                        self.root,
+                        "未提出者確認中",
+                        f"「{assignment_name}」の未提出者を確認しています..."
+                    )
+                else:
+                    # 認証済みの場合は初期ダイアログをそのまま使用
+                    active_progress_dialog = initial_progress_dialog
+                
                 def progress_callback(msg):
                     self.log(msg)
                     if "人" in msg or "個" in msg or "進捗" in msg:
-                        self.root.after(0, lambda m=msg: progress_dialog.update_detail(m))
+                        self.root.after(0, lambda m=msg: active_progress_dialog.update_detail(m))
                 
                 unsubmitted_list, error = self.submission_service.get_unsubmitted_students(
                     selected_class,
@@ -109,7 +124,7 @@ class DownloadHandler:
                     progress_callback=progress_callback
                 )
                 
-                self.root.after(0, lambda: progress_dialog.close())
+                self.root.after(0, lambda: active_progress_dialog.close())
                 
                 if error:
                     self.root.after(0, lambda: messagebox.showerror("エラー", error))
@@ -134,7 +149,7 @@ class DownloadHandler:
             except Exception as e:
                 error_msg = f"❌ 未提出者確認エラー: {str(e)}"
                 self.log(error_msg)
-                self.root.after(0, lambda: progress_dialog.close())
+                self.root.after(0, lambda: active_progress_dialog.close())
                 self.root.after(0, lambda: messagebox.showerror("エラー", error_msg))
         
         thread = threading.Thread(target=fetch_unsubmitted)
@@ -245,7 +260,7 @@ class DownloadHandler:
         
         selected_class = classes[self.state.get_selected_class_index()]
         
-        progress_dialog = ProgressDialog(
+        initial_progress_dialog = ProgressDialog(
             self.root,
             "フォルダ構造確認中",
             f"「{selected_class['name']}」のフォルダ構造を確認しています..."
@@ -258,21 +273,23 @@ class DownloadHandler:
                 self.log("="*50)
                 
                 if not self.auth_manager.access_token:
-                    self.root.after(0, lambda: progress_dialog.close())
+                    self.root.after(0, lambda: initial_progress_dialog.close())
                     if not self.ui_callbacks['authenticate']():
                         return
-                    progress_dialog2 = ProgressDialog(
+                    # 認証後、プログレスダイアログを再表示
+                    active_progress_dialog = ProgressDialog(
                         self.root,
                         "フォルダ構造確認中",
                         f"「{selected_class['name']}」のフォルダ構造を確認しています..."
                     )
                 else:
-                    progress_dialog2 = progress_dialog
+                    # 認証済みの場合は初期ダイアログをそのまま使用
+                    active_progress_dialog = initial_progress_dialog
                 
                 def progress_callback(msg):
                     self.log(msg)
                     if "人" in msg or "個" in msg or "進捗" in msg:
-                        self.root.after(0, lambda m=msg: progress_dialog2.update_detail(m))
+                        self.root.after(0, lambda m=msg: active_progress_dialog.update_detail(m))
                 
                 from core.api_client import GraphAPIClient
                 api_client = GraphAPIClient(self.auth_manager)
@@ -284,13 +301,13 @@ class DownloadHandler:
                     progress_callback=progress_callback
                 )
                 
-                self.root.after(0, lambda: progress_dialog2.close())
+                self.root.after(0, lambda: active_progress_dialog.close())
                 
             except Exception as e:
                 self.log(f"\n❌ エラー: {e}")
                 import traceback
                 traceback.print_exc()
-                self.root.after(0, lambda: progress_dialog.close())
+                self.root.after(0, lambda: initial_progress_dialog.close())
         
         thread = threading.Thread(target=run_debug)
         thread.daemon = True
