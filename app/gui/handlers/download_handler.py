@@ -180,13 +180,24 @@ class DownloadHandler:
         selected_class = classes[self.state.get_selected_class_index()]
         current_class_name = selected_class['name']
         
+        # クラス記号リストをチェック
+        class_codes_list = self.cache.get_class_codes(current_class_name)
+        if not class_codes_list:
+            messagebox.showwarning(
+                "警告",
+                f"クラス「{current_class_name}」の学生情報が取得できません。\n\n"
+                "先に「🔄 課題を手動更新」を実行して、\n"
+                "SharePointから学生リストを取得してください。"
+            )
+            return
+        
         dialog = SelectStudentsDialog(self.root, students_info, current_class_name)
         selected_students = dialog.show()
         
         if selected_students:
             self.log(f"👥 {len(selected_students)}人を選択してダウンロードを開始")
             self.download_selected_assignment(selected_students)
-    
+                
     def _download_assignment_background(self, selected_class, assignment_name, selected_students=None):
         """バックグラウンドでダウンロード実行"""
         try:

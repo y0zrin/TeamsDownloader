@@ -478,35 +478,37 @@ class SelectStudentsDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
         
-        # 学生データを保持（current_class_nameに対応するclass_codeでフィルタ）
+        # 学生データを保持
         self.all_students = []
         
-        # キャッシュから該当クラスのclass_codeリストを取得
+        # クラス名からクラス記号候補を抽出
+        class_name_parts = set(current_class_name.split('-'))
+        
         from core.cache import AssignmentCache
         cache = AssignmentCache()
-        class_codes_list = cache.get_class_codes(current_class_name)
         
-        # class_codesが取得できた場合はそれを使用、できない場合は全学生を表示
-        if class_codes_list:
-            # 該当クラスのclass_codeのみを含む学生を追加
-            valid_codes = set(class_codes_list)
-            for name_key, info in students_info.items():
-                if isinstance(info, list):
-                    # 複数クラスの場合
+        for name_key, info in students_info.items():
+            if isinstance(info, list):
+                # 複数クラス記号を持つ学生の場合
+                cached_selection = cache.get_class_code_selection(current_class_name, info[0].get('student_name'))
+                
+                if cached_selection:
+                    # 選択履歴があり、かつクラス名に一致する場合のみ追加
+                    if cached_selection in class_name_parts:
+                        selected_info = next((item for item in info if item.get('class_code') == cached_selection), None)
+                        if selected_info:
+                            self.all_students.append(selected_info)
+                else:
+                    # クラス名と一致するクラス記号を探す
                     for item in info:
-                        if item.get('class_code') in valid_codes:
+                        code = item.get('class_code', '')
+                        if code in class_name_parts:
                             self.all_students.append(item)
-                else:
-                    # 単一クラスの場合
-                    if info.get('class_code') in valid_codes:
-                        self.all_students.append(info)
-        else:
-            # キャッシュにclass_codesがない場合は全学生を表示
-            for name_key, info in students_info.items():
-                if isinstance(info, list):
-                    for item in info:
-                        self.all_students.append(item)
-                else:
+                            break
+            else:
+                # 単一クラス記号の場合
+                code = info.get('class_code', '')
+                if code in class_name_parts:
                     self.all_students.append(info)
         
         # クラス記号、出席番号でソート
@@ -546,13 +548,6 @@ class SelectStudentsDialog:
         # ボタンフレーム
         button_frame = ttk.Frame(self.dialog, padding="15")
         button_frame.pack(fill=tk.X)
-        
-        self.count_label = ttk.Label(
-            button_frame,
-            text="0人選択中",
-            font=("", 9)
-        )
-        self.count_label.pack(side=tk.LEFT, padx=10)
         
         ttk.Button(
             button_frame,
@@ -630,11 +625,8 @@ class SelectStudentsDialog:
         else:
             self.selected_students = []
             for idx in selected_indices:
-                # 現在表示されているリストから該当する学生情報を取得
-                # インデックスから直接all_studentsの該当学生を取得
                 if idx < len(self.all_students):
                     student_info = self.all_students[idx]
-                    # class_codeとattendance_numberのタプルを返す
                     self.selected_students.append({
                         'class_code': student_info.get('class_code'),
                         'attendance_number': student_info.get('attendance_number'),
@@ -652,7 +644,6 @@ class SelectStudentsDialog:
         """ダイアログを表示して結果を返す"""
         self.dialog.wait_window()
         return self.selected_students
-
 
 # ========== 新機能2: フォント設定ダイアログ ==========
 
