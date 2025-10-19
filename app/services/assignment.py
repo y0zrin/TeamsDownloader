@@ -65,22 +65,29 @@ class AssignmentService:
         else:
             return True, f"✅ {sanitized_name} を追加しました"
     
-    def edit_class(self, index, new_class_name):
+    def edit_class(self, current_name, new_class_name):
         """クラスを編集(新機能)"""
-        if not (0 <= index < len(self.config["classes"])):
-            return False, "❌ 無効な番号です"
+        # 現在のクラスを検索
+        current_index = None
+        for i, cls in enumerate(self.config["classes"]):
+            if cls["name"] == current_name:
+                current_index = i
+                break
+        
+        if current_index is None:
+            return False, f"❌ クラス '{current_name}' が見つかりません"
         
         # 同じ名前がすでに存在するかチェック(自分以外)
         for i, cls in enumerate(self.config["classes"]):
-            if i != index and cls["name"] == new_class_name:
+            if i != current_index and cls["name"] == new_class_name:
                 return False, f"{new_class_name} は既に登録されています"
         
-        old_name = self.config["classes"][index]["name"]
+        old_name = self.config["classes"][current_index]["name"]
         
         # SharePointサイトURLを更新
         site_url = f"https://nkzacjp.sharepoint.com/sites/{new_class_name}"
         
-        self.config["classes"][index] = {
+        self.config["classes"][current_index] = {
             "name": new_class_name,
             "site_url": site_url,
             "site_path": f"/sites/{new_class_name}"
@@ -89,13 +96,21 @@ class AssignmentService:
         self.save_config()
         return True, f"✅ {old_name} を {new_class_name} に変更しました"
     
-    def delete_class(self, index):
+    def delete_class(self, class_name):
         """クラスを削除"""
-        if 0 <= index < len(self.config["classes"]):
-            deleted = self.config["classes"].pop(index)
-            self.save_config()
-            return True, f"✅ {deleted['name']} を削除しました"
-        return False, "❌ 無効な番号です"
+        # クラスを検索
+        delete_index = None
+        for i, cls in enumerate(self.config["classes"]):
+            if cls["name"] == class_name:
+                delete_index = i
+                break
+        
+        if delete_index is None:
+            return False, f"❌ クラス '{class_name}' が見つかりません"
+        
+        deleted = self.config["classes"].pop(delete_index)
+        self.save_config()
+        return True, f"✅ {deleted['name']} を削除しました"
     
     def get_classes(self):
         """登録済みクラス一覧を取得"""

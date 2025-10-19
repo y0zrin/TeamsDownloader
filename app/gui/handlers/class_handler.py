@@ -32,7 +32,7 @@ class ClassHandler:
         
         class_name = simpledialog.askstring(
             "クラス追加",
-            "クラス名を入力してください:\n(例: 3Y-C-Ptech)",
+            "Teams側のチーム名を入力してください。\n（例：OHCxx-AT99A999）",
             parent=self.root
         )
         

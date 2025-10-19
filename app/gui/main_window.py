@@ -307,10 +307,22 @@ class TeamsDownloaderGUI:
         # キャッシュから課題リストを取得
         assignments, last_updated = self.assignment_cache.get(selected_class['name'])
         
+        # キャッシュがない場合は自動更新
+        if assignments is None:
+            self.log(f"ℹ️ キャッシュがありません。自動で課題を更新します...")
+            status_label = self.assignment_panel.get_status_label()
+            status_label.config(
+                text="🔄 自動更新中...",
+                foreground="blue"
+            )
+            self.refresh_assignments()
+            return
+        
         listbox = self.assignment_panel.get_listbox()
         listbox.delete(0, tk.END)
         
         if assignments:
+            # 課題がある場合
             self.state.all_assignments = assignments
             for assignment in assignments:
                 listbox.insert(tk.END, assignment)
@@ -327,13 +339,18 @@ class TeamsDownloaderGUI:
                 )
             self.log(f"📝 {len(assignments)}件の課題を読み込みました（キャッシュ）")
         else:
+            # 課題がない場合（スキャン済み）
             self.state.all_assignments = []
-            status_label = self.assignment_panel.get_status_label()
-            status_label.config(
-                text="ℹ️ キャッシュなし - 課題を手動更新してください",
-                foreground="orange"
-            )
-            self.log("ℹ️ キャッシュなし - 「🔄 課題を手動更新」をクリックしてください")
+            if last_updated:
+                from datetime import datetime
+                last_updated_dt = datetime.fromisoformat(last_updated)
+                time_str = last_updated_dt.strftime('%m/%d %H:%M')
+                status_label = self.assignment_panel.get_status_label()
+                status_label.config(
+                    text=f"ℹ️ 課題なし（最終確認: {time_str}）",
+                    foreground="orange"
+                )
+                self.log("ℹ️ 課題が見つかりませんでした（キャッシュ）")
     
     def refresh_assignments(self):
         """課題を手動更新"""
