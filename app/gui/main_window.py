@@ -180,10 +180,15 @@ class TeamsDownloaderGUI:
     
     def _initialize(self):
         """初期化処理"""
+        from core.version import VERSION
+        
         self.refresh_class_list()
         self.log("="*60)
-        self.log("🚀 アプリケーションを起動しました")
+        self.log(f"🚀 アプリケーションを起動しました (v{VERSION})")
         self.log("="*60)
+        
+        # アップデート確認（バックグラウンド）
+        self._check_for_updates()
         
         # キャッシュのバージョンチェック
         self._check_cache_version()
@@ -211,6 +216,12 @@ class TeamsDownloaderGUI:
             self.log("")
             self.assignment_cache.cache_data['_cache_version'] = 2
             self.assignment_cache.save_cache()
+    
+    def _check_for_updates(self):
+        """アップデートを確認（バックグラウンド）"""
+        from core.version import UpdateChecker
+        checker = UpdateChecker(self.root, self.log)
+        checker.check_for_updates_async()
     
     def _show_cache_status(self):
         """キャッシュ状態を表示"""
