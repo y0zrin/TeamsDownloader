@@ -8,6 +8,11 @@ import json
 import os
 
 
+class ScanError(Exception):
+    """スキャン失敗時の例外"""
+    pass
+
+
 class AssignmentService:
     """課題とクラスの管理サービス"""
     
@@ -123,7 +128,14 @@ class AssignmentService:
         return None
     
     def scan_assignments(self, api_client, class_config, cache_manager, progress_callback=None):
-        """課題一覧をスキャン（クラス記号も収集）- リファクタリング版"""
+        """課題一覧をスキャン（クラス記号も収集）- リファクタリング版
+        
+        Returns:
+            list: 課題リスト（成功時）
+        
+        Raises:
+            ScanError: スキャン失敗時
+        """
         def log(msg):
             if progress_callback:
                 progress_callback(msg)
@@ -133,16 +145,16 @@ class AssignmentService:
         class_config = self.migrate_old_config(class_config)
         
         # サイトIDを取得
-        site_id = api_client.get_site_id(class_config["site_path"])
+        site_id, error_msg = api_client.get_site_id(class_config["site_path"])
         if not site_id:
-            log("❌ サイトIDの取得に失敗")
-            return []
+            log(f"❌ サイトIDの取得に失敗: {error_msg}")
+            raise ScanError(f"サイトにアクセスできません: {error_msg}")
         
         # ドライブIDを取得
         drive_id, drive_name = api_client.get_drive_id(site_id)
         if not drive_id:
             log("❌ ドライブIDの取得に失敗")
-            return []
+            raise ScanError("ドライブにアクセスできません")
         
         log("✅ SharePointに接続しました")
         

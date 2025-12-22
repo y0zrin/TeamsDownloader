@@ -32,9 +32,9 @@ class AssignmentAccessor:
             (drive_id, drive_name, base_folder)
         """
         # サイトIDとドライブIDを取得
-        site_id = self.api_client.get_site_id(class_config["site_path"])
+        site_id, error_msg = self.api_client.get_site_id(class_config["site_path"])
         if not site_id:
-            raise Exception("サイトIDの取得に失敗")
+            raise Exception(f"サイトにアクセスできません: {error_msg}")
         
         drive_id, drive_name = self.api_client.get_drive_id(site_id)
         if not drive_id:

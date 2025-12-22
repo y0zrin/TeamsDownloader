@@ -288,6 +288,7 @@ class DownloadHandler:
         )
         
         def run_debug():
+            active_progress_dialog = initial_progress_dialog
             try:
                 self.log("\n" + "="*50)
                 self.log(f"🔍 フォルダ構造確認: {selected_class['name']}")
@@ -303,9 +304,6 @@ class DownloadHandler:
                         "フォルダ構造確認中",
                         f"「{selected_class['name']}」のフォルダ構造を確認しています..."
                     )
-                else:
-                    # 認証済みの場合は初期ダイアログをそのまま使用
-                    active_progress_dialog = initial_progress_dialog
                 
                 def progress_callback(msg):
                     self.log(msg)
@@ -326,9 +324,12 @@ class DownloadHandler:
                 
             except Exception as e:
                 self.log(f"\n❌ エラー: {e}")
-                import traceback
-                traceback.print_exc()
-                self.root.after(0, lambda: initial_progress_dialog.close())
+                self.root.after(0, lambda: active_progress_dialog.close())
+                
+                # ScanErrorの場合はユーザーにエラーを通知
+                from services.assignment import ScanError
+                if isinstance(e, ScanError):
+                    self.root.after(0, lambda: messagebox.showerror("エラー", str(e)))
         
         thread = threading.Thread(target=run_debug)
         thread.daemon = True

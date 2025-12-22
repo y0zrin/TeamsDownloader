@@ -395,11 +395,32 @@ class TeamsDownloaderGUI:
                 self.root.after(0, lambda: progress_dialog.close())
                 self.root.after(0, lambda: self.load_assignments(selected_class))
                 
-            except Exception as e:
-                self.log(f"❌ エラー: {e}")
-                import traceback
-                traceback.print_exc()
-                self.root.after(0, lambda: progress_dialog.close())
+            except Exception as ex:
+                from services.assignment import ScanError
+                self.log(f"❌ エラー: {ex}")
+                
+                # スキャン失敗時はステータスをエラー表示にし、無限ループを防止
+                error = ex  # クロージャ用にローカル変数にコピー
+                is_scan_error = isinstance(ex, ScanError)
+                error_msg = str(ex)
+                
+                def show_error():
+                    progress_dialog.close()
+                    status_label = self.assignment_panel.get_status_label()
+                    if is_scan_error:
+                        status_label.config(
+                            text=f"❌ {error_msg}",
+                            foreground="red"
+                        )
+                    else:
+                        status_label.config(
+                            text="❌ 課題の取得に失敗しました",
+                            foreground="red"
+                        )
+                        import traceback
+                        traceback.print_exc()
+                
+                self.root.after(0, show_error)
         
         thread = threading.Thread(target=scan_thread)
         thread.daemon = True

@@ -19,17 +19,38 @@ class GraphAPIClient:
         return {"Authorization": f"Bearer {token}"}
     
     def get_site_id(self, site_path):
-        """SharePointサイトIDを取得"""
-        url = f"https://graph.microsoft.com/v1.0/sites/nkzacjp.sharepoint.com:{site_path}"
+        """SharePointサイトIDを取得
+        
+        Returns:
+            tuple: (site_id, error_message)
+                - 成功時: (site_id, None)
+                - 失敗時: (None, error_message)
+        """
+        # Graph APIのサイトパス形式: /sites/{hostname}:/{relative-path}:
+        # 末尾にコロンが必要
+        url = f"https://graph.microsoft.com/v1.0/sites/nkzacjp.sharepoint.com:{site_path}:"
         headers = self._get_headers()
         
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            return response.json()["id"]
+            return response.json()["id"], None
         else:
+            # エラーメッセージを生成
+            class_name = site_path.replace('/sites/', '')
+            if response.status_code == 400:
+                error_msg = f"URLが無効です。クラス名 '{class_name}' に不正な文字が含まれている可能性があります"
+            elif response.status_code == 404:
+                error_msg = f"サイトが見つかりません。クラス名 '{class_name}' が正しいか確認してください"
+            elif response.status_code == 401:
+                error_msg = "認証が必要です。再ログインしてください"
+            elif response.status_code == 403:
+                error_msg = "アクセス権がありません"
+            else:
+                error_msg = f"HTTP {response.status_code}"
+            
             print(f"❌ サイトIDの取得に失敗: {response.status_code}")
             print(f"   詳細: {response.text}")
-            return None
+            return None, error_msg
     
     def get_drive_id(self, site_id):
         """ドライブIDを取得"""
