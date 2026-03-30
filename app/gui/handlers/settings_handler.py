@@ -13,7 +13,7 @@ from gui.dialogs import FontSettingsDialog
 class SettingsHandler:
     """設定ハンドラ"""
     
-    def __init__(self, root, assignment_cache, settings_button_ref, log_callback, font_apply_callback, auth_manager=None):
+    def __init__(self, root, assignment_cache, settings_button_ref, log_callback, font_apply_callback, auth_manager=None, api_client=None, authenticate_callback=None):
         """
         Args:
             root: ルートウィンドウ
@@ -21,7 +21,9 @@ class SettingsHandler:
             settings_button_ref: 設定ボタンへの参照（callable）
             log_callback: ログ出力コールバック
             font_apply_callback: フォント適用コールバック
-            auth_manager: 認証マネージャー（権限確認用）
+            auth_manager: 認証マネージャー
+            api_client: GraphAPIクライアント（名簿更新用）
+            authenticate_callback: 認証実行コールバック
         """
         self.root = root
         self.cache = assignment_cache
@@ -29,6 +31,8 @@ class SettingsHandler:
         self.log = log_callback
         self.apply_font_settings = font_apply_callback
         self.auth_manager = auth_manager
+        self.api_client = api_client
+        self.authenticate = authenticate_callback
     
     def show_settings_menu(self):
         """設定メニューを表示"""
@@ -45,7 +49,7 @@ class SettingsHandler:
         menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
         menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
         menu.add_separator()
-        menu.add_command(label="🔑 アクセス権限を確認", command=self.check_permissions)
+        menu.add_command(label="📋 名簿を更新", command=self.update_roster)
 
         # メニューを表示
         menu.post(x, y)
@@ -198,20 +202,67 @@ class SettingsHandler:
                 else:
                     self.log("ℹ️ クリアする項目が選択されませんでした")
 
-    def check_permissions(self):
-        """アクセストークンの権限を確認"""
-        if not self.auth_manager:
-            messagebox.showwarning("警告", "認証マネージャーが設定されていません。")
+    def update_roster(self):
+        """名簿をSharePointから更新"""
+        import threading
+        from gui.dialogs import ProgressDialog
+        from services.roster_updater import RosterUpdater, get_academic_year_semester
+
+        if not self.auth_manager or not self.api_client:
+            messagebox.showwarning("警告", "認証情報が設定されていません。")
             return
 
-        token = self.auth_manager.get_token()
-        if not token:
-            messagebox.showwarning("警告", "認証されていません。\n先にログインしてください。")
+        # 未認証なら認証を実行
+        if not self.auth_manager.get_token():
+            if self.authenticate:
+                if not self.authenticate():
+                    return
+            else:
+                messagebox.showwarning("警告", "認証されていません。\n先にログインしてください。")
+                return
+
+        year, semester = get_academic_year_semester()
+        semester_label = "前期" if "前期" in semester else "後期"
+
+        if not messagebox.askyesno(
+            "名簿更新",
+            f"{year}年度 {semester_label} の名簿をダウンロードしますか？\n\n"
+            f"SharePointから最新の名簿ファイルを取得し、\n"
+            f"ローカルの学生情報を更新します。"
+        ):
             return
 
-        from utils.permission_checker import check_token_permissions
-        from gui.dialogs import PermissionCheckDialog
+        progress_dialog = ProgressDialog(
+            self.root,
+            "名簿更新中",
+            f"{year}年度 {semester_label} の名簿をダウンロード中..."
+        )
 
-        result = check_token_permissions(token)
-        dialog = PermissionCheckDialog(self.root, result)
-        dialog.show()
+        def run_update():
+            try:
+                updater = RosterUpdater(self.api_client)
+
+                def progress(msg):
+                    self.log(msg)
+                    self.root.after(0, lambda m=msg: progress_dialog.update_detail(m))
+
+                success, message = updater.update_roster(
+                    year=year,
+                    semester=semester,
+                    progress_callback=progress,
+                )
+
+                self.root.after(0, lambda: progress_dialog.close())
+
+                if success:
+                    self.root.after(0, lambda: messagebox.showinfo("名簿更新完了", message))
+                else:
+                    self.root.after(0, lambda: messagebox.showwarning("名簿更新", message))
+
+            except Exception as e:
+                self.log(f"❌ 名簿更新エラー: {e}")
+                self.root.after(0, lambda: progress_dialog.close())
+                self.root.after(0, lambda: messagebox.showerror("エラー", str(e)))
+
+        thread = threading.Thread(target=run_update, daemon=True)
+        thread.start()

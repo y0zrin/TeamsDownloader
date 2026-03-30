@@ -117,7 +117,9 @@ class TeamsDownloaderGUI:
             lambda: self.class_panel.get_settings_button(),
             self.log,
             self.apply_font_settings,
-            self.auth_manager
+            self.auth_manager,
+            self.api_client,
+            self.auth_handler.authenticate_with_gui
         )
         
         # ダウンロードハンドラ
