@@ -9,10 +9,11 @@ import webbrowser
 from tkinter import messagebox
 
 # 現在のバージョン
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
-# バージョン情報のURL（GitHub Gist）
-VERSION_URL = "https://gist.githubusercontent.com/y0zrin/b8fe7992f0a823c3e8c4856dc96a45a6/raw/version.json"
+# GitHub Releases API
+GITHUB_REPO = "y0zrin/TeamsDownloader"
+RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 
 def compare_versions(current: str, latest: str) -> int:
@@ -58,37 +59,32 @@ class UpdateChecker:
         """アップデート確認（バックグラウンド）"""
         try:
             import requests
-            import time
-            
-            # キャッシュ回避のためタイムスタンプを追加
-            url = f"{VERSION_URL}?t={int(time.time())}"
-            
-            # キャッシュ無効化ヘッダーを追加
+
             headers = {
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
+                'Accept': 'application/vnd.github.v3+json',
             }
-            
-            response = requests.get(url, headers=headers, timeout=5)
+
+            response = requests.get(RELEASES_API_URL, headers=headers, timeout=5)
             if response.status_code != 200:
                 return
-            
+
             data = response.json()
-            latest_version = data.get('version', VERSION)
-            release_notes = data.get('release_notes', '')
-            download_url = data.get('download_url', '')
-            
+
+            # タグ名からバージョン取得（"v1.2.0" → "1.2.0"）
+            tag = data.get('tag_name', '')
+            latest_version = tag.lstrip('v')
+            release_notes = data.get('body', '')
+            download_url = data.get('html_url', '')
+
             # バージョン比較
             if compare_versions(VERSION, latest_version) < 0:
-                # 新しいバージョンがある
                 self.root.after(0, lambda: self._show_update_dialog(
                     latest_version, release_notes, download_url
                 ))
             else:
                 self.log(f"✅ 最新バージョンです (v{VERSION})")
-        
-        except Exception as e:
+
+        except Exception:
             # エラーは静かに無視（ネットワーク不通など）
             pass
     

@@ -37,8 +37,8 @@ class DownloadHandler:
     
     def download_selected_assignment(self, selected_students=None):
         """選択された課題をダウンロード"""
-        if self.state.is_downloading():
-            self.log("⚠️ ダウンロードが既に実行中です")
+        if self.state.is_busy():
+            self.log("⚠️ 他の操作が実行中です")
             return
         
         if self.state.get_selected_class_index() is None:

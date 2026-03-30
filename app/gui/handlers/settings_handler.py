@@ -13,7 +13,7 @@ from gui.dialogs import FontSettingsDialog
 class SettingsHandler:
     """設定ハンドラ"""
     
-    def __init__(self, root, assignment_cache, settings_button_ref, log_callback, font_apply_callback):
+    def __init__(self, root, assignment_cache, settings_button_ref, log_callback, font_apply_callback, auth_manager=None):
         """
         Args:
             root: ルートウィンドウ
@@ -21,12 +21,14 @@ class SettingsHandler:
             settings_button_ref: 設定ボタンへの参照（callable）
             log_callback: ログ出力コールバック
             font_apply_callback: フォント適用コールバック
+            auth_manager: 認証マネージャー（権限確認用）
         """
         self.root = root
         self.cache = assignment_cache
         self.get_settings_button = settings_button_ref
         self.log = log_callback
         self.apply_font_settings = font_apply_callback
+        self.auth_manager = auth_manager
     
     def show_settings_menu(self):
         """設定メニューを表示"""
@@ -42,7 +44,9 @@ class SettingsHandler:
         menu.add_separator()
         menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
         menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
-        
+        menu.add_separator()
+        menu.add_command(label="🔑 アクセス権限を確認", command=self.check_permissions)
+
         # メニューを表示
         menu.post(x, y)
     
@@ -193,3 +197,21 @@ class SettingsHandler:
                     self.log(f"🗑️ キャッシュをクリアしました: {', '.join(cleared)}")
                 else:
                     self.log("ℹ️ クリアする項目が選択されませんでした")
+
+    def check_permissions(self):
+        """アクセストークンの権限を確認"""
+        if not self.auth_manager:
+            messagebox.showwarning("警告", "認証マネージャーが設定されていません。")
+            return
+
+        token = self.auth_manager.get_token()
+        if not token:
+            messagebox.showwarning("警告", "認証されていません。\n先にログインしてください。")
+            return
+
+        from utils.permission_checker import check_token_permissions
+        from gui.dialogs import PermissionCheckDialog
+
+        result = check_token_permissions(token)
+        dialog = PermissionCheckDialog(self.root, result)
+        dialog.show()
