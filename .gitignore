@@ -30,7 +30,6 @@ encryption.key
 Teams課題ダウンローダー_リリース手順書.docx
 app/assignments_cache.dat
 empty_commit.bat
-TeamsDownloader-v*.zip
-RELEASE_NOTES_v*.md
+Releases/
 TD.zip
 app/test_write_permission.py

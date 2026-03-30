@@ -49,6 +49,11 @@ class SettingsHandler:
         menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
         menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
         menu.add_separator()
+        # ごみ箱を空にする設定（チェックマーク付きトグル）
+        empty_recycle = self.cache.get_empty_recycle_bin()
+        label = "✅ 削除後にごみ箱を空にする" if empty_recycle else "　 削除後にごみ箱を空にする"
+        menu.add_command(label=label, command=self.toggle_empty_recycle_bin)
+        menu.add_separator()
         menu.add_command(label="📋 名簿を更新", command=self.update_roster)
 
         # メニューを表示
@@ -111,6 +116,16 @@ class SettingsHandler:
             self.log(f"🔤 フォントサイズを変更しました: {new_size}")
             self.apply_font_settings()
     
+    def toggle_empty_recycle_bin(self):
+        """削除後にごみ箱を空にする設定を切り替え"""
+        current = self.cache.get_empty_recycle_bin()
+        new_value = not current
+        self.cache.set_empty_recycle_bin(new_value)
+        if new_value:
+            self.log("🗑️ 削除後にごみ箱を空にする: ON")
+        else:
+            self.log("🗑️ 削除後にごみ箱を空にする: OFF")
+
     def clear_cache(self):
         """キャッシュをクリア"""
         dialog = tk.Toplevel(self.root)

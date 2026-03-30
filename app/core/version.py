@@ -9,7 +9,7 @@ import webbrowser
 from tkinter import messagebox
 
 # 現在のバージョン
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 # GitHub Releases API
 GITHUB_REPO = "y0zrin/TeamsDownloader"

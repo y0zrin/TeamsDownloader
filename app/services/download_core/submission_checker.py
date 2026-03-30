@@ -50,7 +50,7 @@ class SubmissionChecker:
         
         try:
             # SharePointに接続
-            drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
+            _site_id, drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
                 class_config, progress
             )
             
