@@ -12,12 +12,13 @@ from gui.dialogs.dialog_utils import create_centered_dialog
 class DeleteConfirmDialog:
     """削除確認ダイアログ（課題名入力必須）"""
 
-    def __init__(self, parent, class_name, assignment_name):
+    def __init__(self, parent, class_name, assignment_name, empty_recycle_bin=False):
         """
         Args:
             parent: 親ウィンドウ
             class_name: クラス名
             assignment_name: 削除対象の課題名
+            empty_recycle_bin: 削除後にごみ箱を空にするかどうか
         """
         self.confirmed = False
         self.assignment_name = assignment_name
@@ -47,13 +48,26 @@ class DeleteConfirmDialog:
         )
 
         # 注意書き
+        if empty_recycle_bin:
+            note_text = (
+                "各学生フォルダ内の該当課題フォルダを削除します。\n"
+                "⚠️ 削除後にごみ箱を空にします。\n"
+                "完全に削除され、復元できなくなります。"
+            )
+            note_color = "red"
+        else:
+            note_text = (
+                "各学生フォルダ内の該当課題フォルダを削除します。\n"
+                "削除されたファイルはSharePointのごみ箱に移動し、\n"
+                "93日間は復元可能です。"
+            )
+            note_color = "gray"
+
         ttk.Label(
             main_frame,
-            text="各学生フォルダ内の該当課題フォルダを削除します。\n"
-                 "削除されたファイルはSharePointのごみ箱に移動し、\n"
-                 "93日間は復元可能です。",
+            text=note_text,
             font=("", 9),
-            foreground="gray",
+            foreground=note_color,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 15))
 

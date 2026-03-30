@@ -25,32 +25,32 @@ class AssignmentAccessor:
         self,
         class_config: dict,
         progress: ProgressTracker
-    ) -> Tuple[str, str, str]:
+    ) -> Tuple[str, str, str, str]:
         """SharePointに接続してドライブ情報を取得
-        
+
         Returns:
-            (drive_id, drive_name, base_folder)
+            (site_id, drive_id, drive_name, base_folder)
         """
         # サイトIDとドライブIDを取得
         site_id, error_msg = self.api_client.get_site_id(class_config["site_path"])
         if not site_id:
             raise Exception(f"サイトにアクセスできません: {error_msg}")
-        
+
         drive_id, drive_name = self.api_client.get_drive_id(site_id)
         if not drive_id:
             raise Exception("ドライブIDの取得に失敗")
-        
+
         progress.log_success("SharePointに接続しました")
-        
+
         # ベースフォルダを設定
         if drive_name == "Student Work":
             base_folder = "Working files"
         else:
             base_folder = "Student Work/Working files"
-        
+
         progress.log_info(f"📂 フォルダパス: {drive_name}/{base_folder}")
-        
-        return drive_id, drive_name, base_folder
+
+        return site_id, drive_id, drive_name, base_folder
     
     def get_sharepoint_students(
         self,

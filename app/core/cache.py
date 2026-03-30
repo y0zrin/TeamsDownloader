@@ -22,6 +22,7 @@ FONT_SIZES = {
 
 DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態
 DEFAULT_DOWNLOAD_PATH = '../downloads'  # デフォルトダウンロード先
+DEFAULT_EMPTY_RECYCLE_BIN = False  # 削除後にごみ箱を空にしない（デフォルト）
 
 
 class AssignmentCache:
@@ -150,16 +151,18 @@ class AssignmentCache:
         # 保持する設定
         font_size = self.cache_data.get('font_size', DEFAULT_FONT_SIZE)
         download_path = self.cache_data.get('download_path', DEFAULT_DOWNLOAD_PATH)
+        empty_recycle_bin = self.cache_data.get('empty_recycle_bin', DEFAULT_EMPTY_RECYCLE_BIN)
         cache_version = self.cache_data.get('_cache_version', 2)
-    
+
         # キャッシュをクリア
         self.cache_data = {}
-    
+
         # 設定を復元
         self.cache_data['font_size'] = font_size
         self.cache_data['download_path'] = download_path
+        self.cache_data['empty_recycle_bin'] = empty_recycle_bin
         self.cache_data['_cache_version'] = cache_version
-    
+
         self.save_cache()
     
     def get_students_list(self, class_name):
@@ -301,6 +304,18 @@ class AssignmentCache:
         size_key = self.get_font_size()
         return FONT_SIZES.get(size_key, FONT_SIZES[DEFAULT_FONT_SIZE])
     
+    # ========== 削除後ごみ箱を空にする設定 ==========
+
+    def get_empty_recycle_bin(self):
+        """削除後にごみ箱を空にする設定を取得"""
+        return self.cache_data.get('empty_recycle_bin', DEFAULT_EMPTY_RECYCLE_BIN)
+
+    def set_empty_recycle_bin(self, enabled):
+        """削除後にごみ箱を空にする設定を保存"""
+        self.cache_data['empty_recycle_bin'] = bool(enabled)
+        self.save_cache()
+        return True
+
     # ========== ダウンロード先設定 ==========
     
     def get_download_path(self):

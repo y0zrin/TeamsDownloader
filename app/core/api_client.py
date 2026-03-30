@@ -126,6 +126,53 @@ class GraphAPIClient:
         items = self.list_folder_items(drive_id, folder_path)
         return [f for f in items if f.get("file")]
 
+    def get_recycle_bin_items(self, site_id):
+        """サイトのごみ箱アイテムを一覧取得
+
+        Args:
+            site_id: サイトID
+
+        Returns:
+            list: ごみ箱アイテムのリスト（失敗時は空リスト）
+        """
+        items = []
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/recycleBin/items"
+        headers = self._get_headers()
+
+        while url:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                items.extend(data.get("value", []))
+                url = data.get("@odata.nextLink")
+            else:
+                print(f"❌ ごみ箱一覧の取得に失敗: {response.status_code}")
+                break
+
+        return items
+
+    def purge_recycle_bin_item(self, site_id, item_id):
+        """ごみ箱のアイテムを完全削除
+
+        Args:
+            site_id: サイトID
+            item_id: ごみ箱アイテムのID
+
+        Returns:
+            tuple: (success, error_message)
+        """
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/recycleBin/items/{item_id}"
+        headers = self._get_headers()
+
+        response = requests.delete(url, headers=headers)
+
+        if response.status_code == 204:
+            return True, None
+        elif response.status_code == 404:
+            return True, None  # 既に削除済み
+        else:
+            return False, f"HTTP {response.status_code}"
+
     def delete_item(self, drive_id, item_id):
         """ドライブアイテムを削除（ごみ箱に移動）
 

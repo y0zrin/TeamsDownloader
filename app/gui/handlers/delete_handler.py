@@ -53,7 +53,8 @@ class DeleteHandler:
 
         # 確認ダイアログ（課題名入力必須）
         confirm_dialog = DeleteConfirmDialog(
-            self.root, selected_class['name'], assignment_name
+            self.root, selected_class['name'], assignment_name,
+            empty_recycle_bin=self.cache.get_empty_recycle_bin(),
         )
         if not confirm_dialog.show():
             return

@@ -105,10 +105,18 @@ def collect_files():
     return sorted(files, key=lambda x: x[1])
 
 
+def get_release_dir(version):
+    """リリース用ディレクトリを取得・作成"""
+    release_dir = os.path.join(REPO_ROOT, "Releases", f"v{version}")
+    os.makedirs(release_dir, exist_ok=True)
+    return release_dir
+
+
 def create_zip(version, files):
     """リリース用ZIPを作成"""
+    release_dir = get_release_dir(version)
     zip_name = f"TeamsDownloader-v{version}.zip"
-    zip_path = os.path.join(REPO_ROOT, zip_name)
+    zip_path = os.path.join(release_dir, zip_name)
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for full_path, rel_path in files:
@@ -216,7 +224,8 @@ def main():
     print(f"\nリリースノートを生成中...")
     release_notes = generate_release_notes(new_version, current_version if new_version != current_version else None)
 
-    notes_file = os.path.join(REPO_ROOT, f"RELEASE_NOTES_v{new_version}.md")
+    release_dir = get_release_dir(new_version)
+    notes_file = os.path.join(release_dir, f"RELEASE_NOTES_v{new_version}.md")
     with open(notes_file, "w", encoding="utf-8") as f:
         f.write(release_notes)
     print(f"  {os.path.basename(notes_file)}")

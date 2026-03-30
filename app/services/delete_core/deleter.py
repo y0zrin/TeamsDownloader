@@ -53,7 +53,7 @@ class AssignmentDeleter:
 
         try:
             # SharePointに接続
-            drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
+            site_id, drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
                 class_config, self.progress
             )
 
@@ -134,6 +134,10 @@ class AssignmentDeleter:
             # 結果ログ
             self._log_result(result, deleted_count)
 
+            # ごみ箱を空にする（設定がONの場合）
+            if deleted_count > 0 and self.cache.get_empty_recycle_bin():
+                self._empty_recycle_bin(site_id)
+
             return result
 
         except DeleteCancelledError:
@@ -146,6 +150,39 @@ class AssignmentDeleter:
             import traceback
             traceback.print_exc()
             return result
+
+    def _empty_recycle_bin(self, site_id: str):
+        """サイトのごみ箱を空にする"""
+        self.progress.log_section("🗑️ ごみ箱を空にしています...")
+
+        items = self.api_client.get_recycle_bin_items(site_id)
+        if not items:
+            self.progress.log_info("ごみ箱は空です")
+            return
+
+        self.progress.log_info(f"ごみ箱のアイテム数: {len(items)}件")
+
+        purged = 0
+        failed = 0
+        for item in items:
+            if self.progress.check_cancelled():
+                self.progress.log_warning("ごみ箱の削除がキャンセルされました")
+                break
+
+            success, error = self.api_client.purge_recycle_bin_item(
+                site_id, item["id"]
+            )
+            if success:
+                purged += 1
+            else:
+                failed += 1
+                self.progress.log_error(f"  ❌ 完全削除失敗: {error}")
+
+            time.sleep(0.25)
+
+        self.progress.log_info(f"✅ ごみ箱から{purged}件を完全削除しました")
+        if failed > 0:
+            self.progress.log_error(f"   失敗: {failed}件")
 
     def _invalidate_cache(self, class_name: str):
         """課題キャッシュを無効化"""
