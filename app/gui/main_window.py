@@ -19,11 +19,12 @@ from core.api_client import GraphAPIClient
 from core.cache import AssignmentCache
 from services.assignment import AssignmentService
 from services.downloader import DownloadService
+from services.delete_service import DeleteService
 from services.submission_checker_service import SubmissionCheckerService
 
 from gui.state import AppState
 from gui.panels import ClassPanel, AssignmentPanel, LogPanel
-from gui.handlers import AuthHandler, ClassHandler, DownloadHandler, SettingsHandler
+from gui.handlers import AuthHandler, ClassHandler, DownloadHandler, DeleteHandler, SettingsHandler
 
 
 class TeamsDownloaderGUI:
@@ -40,6 +41,7 @@ class TeamsDownloaderGUI:
         self.assignment_cache = AssignmentCache(cache_hours=24)
         self.assignment_service = AssignmentService()
         self.download_service = DownloadService(self.api_client, self.assignment_cache)
+        self.delete_service = DeleteService(self.api_client, self.assignment_cache)
         self.submission_service = SubmissionCheckerService(self.api_client, self.assignment_cache)
         
         # 状態管理
@@ -114,7 +116,8 @@ class TeamsDownloaderGUI:
             self.assignment_cache,
             lambda: self.class_panel.get_settings_button(),
             self.log,
-            self.apply_font_settings
+            self.apply_font_settings,
+            self.auth_manager
         )
         
         # ダウンロードハンドラ
@@ -135,6 +138,29 @@ class TeamsDownloaderGUI:
                 'authenticate': self.auth_handler.authenticate_with_gui,
                 'get_assignment_selection': lambda: self.assignment_panel.get_listbox().curselection(),
                 'get_assignment_name': lambda idx: self.assignment_panel.get_listbox().get(idx)
+            }
+        )
+
+        # 削除ハンドラ
+        self.delete_handler = DeleteHandler(
+            self.root,
+            {
+                'assignment': self.assignment_service,
+                'delete': self.delete_service,
+                'auth': self.auth_manager
+            },
+            self.state,
+            self.assignment_cache,
+            self.log,
+            {
+                'show_download_buttons': lambda: self.assignment_panel.show_download_buttons(),
+                'show_cancel_button': lambda: self.assignment_panel.show_cancel_button(
+                    self.delete_handler.cancel_delete
+                ),
+                'authenticate': self.auth_handler.authenticate_with_gui,
+                'get_assignment_selection': lambda: self.assignment_panel.get_listbox().curselection(),
+                'get_assignment_name': lambda idx: self.assignment_panel.get_listbox().get(idx),
+                'refresh_assignments': self._refresh_after_delete
             }
         )
         
@@ -171,6 +197,8 @@ class TeamsDownloaderGUI:
                 ),
                 'download': lambda: self.download_handler.download_selected_assignment(),
                 'cancel_download': self.download_handler.cancel_download,
+                'delete': lambda: self.delete_handler.delete_selected_assignment(),
+                'cancel_delete': self.delete_handler.cancel_delete,
                 'filter': self.filter_assignments
             }
         )
@@ -446,6 +474,13 @@ class TeamsDownloaderGUI:
         self.class_panel.update_font(self.font_config['list'])
         self.assignment_panel.update_font(self.font_config['ui'], self.font_config['list'])
     
+    def _refresh_after_delete(self):
+        """削除後に課題リストを再読み込み"""
+        if self.state.get_selected_class_index() is not None:
+            classes = self.assignment_service.get_classes()
+            selected_class = classes[self.state.get_selected_class_index()]
+            self.load_assignments(selected_class)
+
     def filter_assignments(self):
         """検索ボックスの内容で課題をフィルタ"""
         search_text = self.assignment_panel.search_var.get().lower()

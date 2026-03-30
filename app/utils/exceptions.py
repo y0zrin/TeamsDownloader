@@ -36,6 +36,11 @@ class APIError(TeamsDownloaderError):
         super().__init__(self.message)
 
 
+class DeleteCancelledError(TeamsDownloaderError):
+    """削除がキャンセルされた"""
+    pass
+
+
 class CacheError(TeamsDownloaderError):
     """キャッシュ操作エラー"""
     pass

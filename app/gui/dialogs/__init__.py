@@ -15,6 +15,8 @@ from .student_dialogs import (
 )
 from .settings_dialogs import FontSettingsDialog
 from .progress_dialogs import ProgressDialog, DownloadCompleteDialog
+from .permission_dialogs import PermissionCheckDialog
+from .delete_dialogs import DeleteConfirmDialog, DeleteCompleteDialog
 
 __all__ = [
     'DeviceCodeDialog',
@@ -26,4 +28,7 @@ __all__ = [
     'FontSettingsDialog',
     'ProgressDialog',
     'DownloadCompleteDialog',
+    'PermissionCheckDialog',
+    'DeleteConfirmDialog',
+    'DeleteCompleteDialog',
 ]

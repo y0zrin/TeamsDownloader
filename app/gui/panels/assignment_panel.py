@@ -22,6 +22,8 @@ class AssignmentPanel:
                 - select_students: 学生選択ハンドラ
                 - download: ダウンロードハンドラ
                 - cancel_download: キャンセルハンドラ
+                - delete: 課題削除ハンドラ
+                - cancel_delete: 削除キャンセルハンドラ
                 - filter: フィルタハンドラ（オプション）
         """
         self.handlers = handlers
@@ -122,28 +124,46 @@ class AssignmentPanel:
             command=self.handlers['download']
         )
         self.download_button.grid(row=0, column=2, sticky=(tk.W, tk.E), padx=(2, 0))
-        
-        # キャンセルボタン（ダウンロード中のみ表示）
+
+        # 2行目: 削除ボタン
+        self.delete_btn = ttk.Button(
+            self.bottom_button_frame,
+            text="🗑️ サーバーから削除",
+            command=self.handlers.get('delete', lambda: None)
+        )
+        self.delete_btn.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 0))
+
+        # キャンセルボタン（操作中のみ表示）
         self.cancel_button = ttk.Button(
             self.bottom_button_frame,
-            text="❌ ダウンロードをキャンセル",
+            text="❌ キャンセル",
             command=self.handlers['cancel_download']
         )
-        self.cancel_button.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E))
+        self.cancel_button.grid(row=0, column=0, columnspan=3, rowspan=2, sticky=(tk.W, tk.E))
         self.cancel_button.grid_remove()
     
     def show_download_buttons(self):
-        """通常の3つのボタンを表示"""
+        """通常のボタンを表示"""
         self.cancel_button.grid_remove()
         self.unsubmitted_btn.grid()
         self.select_students_btn.grid()
         self.download_button.grid()
-    
-    def show_cancel_button(self):
-        """キャンセルボタンのみを表示"""
+        self.delete_btn.grid()
+
+    def show_cancel_button(self, cancel_command=None):
+        """キャンセルボタンのみを表示
+
+        Args:
+            cancel_command: キャンセル時に呼ぶコールバック（省略時はcancel_download）
+        """
         self.unsubmitted_btn.grid_remove()
         self.select_students_btn.grid_remove()
         self.download_button.grid_remove()
+        self.delete_btn.grid_remove()
+        if cancel_command:
+            self.cancel_button.config(command=cancel_command)
+        else:
+            self.cancel_button.config(command=self.handlers['cancel_download'])
         self.cancel_button.grid()
     
     def get_listbox(self):

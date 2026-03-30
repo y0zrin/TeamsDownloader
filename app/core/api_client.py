@@ -125,3 +125,36 @@ class GraphAPIClient:
         """フォルダ内のファイルを取得"""
         items = self.list_folder_items(drive_id, folder_path)
         return [f for f in items if f.get("file")]
+
+    def delete_item(self, drive_id, item_id):
+        """ドライブアイテムを削除（ごみ箱に移動）
+
+        Args:
+            drive_id: ドライブID
+            item_id: 削除するアイテムのID
+
+        Returns:
+            tuple: (success, error_message)
+                - 成功時: (True, None)
+                - 失敗時: (False, error_message)
+        """
+        url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}"
+        headers = self._get_headers()
+
+        response = requests.delete(url, headers=headers)
+
+        if response.status_code == 204:
+            return True, None
+        elif response.status_code == 404:
+            return True, None  # 既に削除済み
+        elif response.status_code == 403:
+            return False, "アクセス権がありません（書き込み権限が必要です）"
+        elif response.status_code == 401:
+            return False, "認証が切れています。再ログインしてください"
+        elif response.status_code == 423:
+            return False, "ファイルがロックされています"
+        elif response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "不明")
+            return False, f"レート制限中です（{retry_after}秒後に再試行してください）"
+        else:
+            return False, f"HTTP {response.status_code}: {response.text[:200]}"

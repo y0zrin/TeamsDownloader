@@ -16,18 +16,35 @@ class AppState:
         # ダウンロード状態
         self.download_in_progress = False
         self.download_thread = None
-        
+
+        # 削除状態
+        self.delete_in_progress = False
+        self.delete_thread = None
+
         # ダイアログ参照
         self.device_code_dialog = None
-    
+
     def reset_download_state(self):
         """ダウンロード状態をリセット"""
         self.download_in_progress = False
         self.download_thread = None
-    
+
+    def reset_delete_state(self):
+        """削除状態をリセット"""
+        self.delete_in_progress = False
+        self.delete_thread = None
+
     def is_downloading(self):
         """ダウンロード中かどうか"""
         return self.download_in_progress
+
+    def is_deleting(self):
+        """削除中かどうか"""
+        return self.delete_in_progress
+
+    def is_busy(self):
+        """何らかの操作が実行中かどうか"""
+        return self.download_in_progress or self.delete_in_progress
     
     def get_selected_class_index(self):
         """選択中のクラスインデックスを取得"""
