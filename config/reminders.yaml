@@ -1,6 +1,1 @@
-reminders:
-- issue_number: 1
-  title: ファイル削除機能を作成
-  datetime: 2026-03-14T18:00
-  channels:
-  - os
+reminders: []
