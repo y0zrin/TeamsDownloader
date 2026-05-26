@@ -4,8 +4,8 @@
 名簿更新サービス
 
 SharePoint上の名簿ファイルを取得し、ローカルに配置する。
-パス: /sites/old-hal-oh-staff/Shared Documents/
-      A001教務/F0301教務業務/M_名簿/{year}/{semester}/04_全クラス/
+パス: /sites/HAL-OH-STAFF-v2/Shared Documents/
+      Documents/A001教務部/M_名簿/{year}/{semester}/04_全クラス/
 """
 
 import os
@@ -13,8 +13,8 @@ from datetime import datetime
 from typing import Optional, Callable, Tuple, List
 
 # SharePoint設定
-ROSTER_SITE_PATH = "/sites/old-hal-oh-staff"
-ROSTER_BASE_PATH = "A001教務/F0301教務業務/M_名簿"
+ROSTER_SITE_PATH = "/sites/HAL-OH-STAFF-v2"
+ROSTER_BASE_PATH = "Documents/A001教務部/M_名簿"
 ROSTER_FOLDER = "04_全クラス"
 
 # 学期定義
