@@ -8,6 +8,7 @@ from .main_window import TeamsDownloaderGUI
 from .dialogs import (DeviceCodeDialog, ClassCodeSelectionDialog,
                      EditClassDialog, UnsubmittedStudentsDialog,
                      SelectStudentsDialog, FontSettingsDialog,
+                     ExcludeSettingsDialog,
                      ProgressDialog, NameMappingDialog,
                      DownloadCompleteDialog)
 
@@ -19,6 +20,7 @@ __all__ = [
     'UnsubmittedStudentsDialog',
     'SelectStudentsDialog',
     'FontSettingsDialog',
+    'ExcludeSettingsDialog',
     'ProgressDialog',
     'NameMappingDialog',
     'DownloadCompleteDialog',

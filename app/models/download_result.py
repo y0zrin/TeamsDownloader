@@ -16,6 +16,9 @@ class DownloadedFile:
     file_path: str
     success: bool
     error: Optional[str] = None
+    skipped: bool = False          # 除外パターンに一致してダウンロードしなかった
+    skip_reason: Optional[str] = None
+    reused: bool = False           # 既にダウンロード済みだったので転送しなかった
 
 
 @dataclass
@@ -31,8 +34,17 @@ class StudentDownloadResult:
         return len([f for f in self.files if f.success])
     
     @property
+    def skipped_count(self) -> int:
+        return len([f for f in self.files if f.skipped])
+    
+    @property
+    def reused_count(self) -> int:
+        return len([f for f in self.files if f.reused])
+    
+    @property
     def has_errors(self) -> bool:
-        return any(not f.success for f in self.files)
+        # 除外によるスキップは失敗ではない
+        return any(not f.success and not f.skipped for f in self.files)
     
     @property
     def display_name(self) -> str:
@@ -51,6 +63,8 @@ class DownloadResult:
     students: List[StudentDownloadResult] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     cancelled: bool = False
+    skipped_count: int = 0
+    reused_count: int = 0
     
     @property
     def success_rate(self) -> float:

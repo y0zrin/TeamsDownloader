@@ -59,6 +59,9 @@ class TeamsDownloaderGUI:
         # ログをリダイレクト
         self.log_panel.redirect_output()
         
+        # 画面が固まったときの診断を開始
+        self._start_hang_watchdog()
+        
         # 初期化処理
         self._initialize()
     
@@ -137,6 +140,7 @@ class TeamsDownloaderGUI:
             {
                 'show_download_buttons': lambda: self.assignment_panel.show_download_buttons(),
                 'show_cancel_button': lambda: self.assignment_panel.show_cancel_button(),
+                'set_cancel_pending': lambda: self.assignment_panel.set_cancel_pending(),
                 'authenticate': self.auth_handler.authenticate_with_gui,
                 'get_assignment_selection': lambda: self.assignment_panel.get_listbox().curselection(),
                 'get_assignment_name': lambda idx: self.assignment_panel.get_listbox().get(idx)
@@ -159,6 +163,7 @@ class TeamsDownloaderGUI:
                 'show_cancel_button': lambda: self.assignment_panel.show_cancel_button(
                     self.delete_handler.cancel_delete
                 ),
+                'set_cancel_pending': lambda: self.assignment_panel.set_cancel_pending(),
                 'authenticate': self.auth_handler.authenticate_with_gui,
                 'get_assignment_selection': lambda: self.assignment_panel.get_listbox().curselection(),
                 'get_assignment_name': lambda idx: self.assignment_panel.get_listbox().get(idx),
@@ -207,6 +212,15 @@ class TeamsDownloaderGUI:
         
         # キーボードショートカット
         self.root.bind('<Shift-Delete>', lambda e: self.settings_handler.clear_cache())
+    
+    def _start_hang_watchdog(self):
+        """画面の固まりを検知する監視を開始"""
+        try:
+            from utils.hang_watchdog import HangWatchdog
+            self.hang_watchdog = HangWatchdog(self.root, log=self.log)
+            self.hang_watchdog.start()
+        except Exception as e:
+            print(f"⚠️ ハング監視を開始できませんでした: {e}")
     
     def _initialize(self):
         """初期化処理"""

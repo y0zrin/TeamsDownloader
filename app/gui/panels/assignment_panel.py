@@ -63,7 +63,7 @@ class AssignmentPanel:
         
         # 検索フィルタを設定（ハンドラ経由）
         if 'filter' in self.handlers:
-            self.search_var.trace('w', lambda *args: self.handlers['filter']())
+            self.search_var.trace_add('write', lambda *args: self.handlers['filter']())
         
         # 課題リスト
         list_frame = ttk.Frame(parent)
@@ -144,6 +144,7 @@ class AssignmentPanel:
     
     def show_download_buttons(self):
         """通常のボタンを表示"""
+        self.reset_cancel_button()
         self.cancel_button.grid_remove()
         self.unsubmitted_btn.grid()
         self.select_students_btn.grid()
@@ -164,7 +165,16 @@ class AssignmentPanel:
             self.cancel_button.config(command=cancel_command)
         else:
             self.cancel_button.config(command=self.handlers['cancel_download'])
+        self.reset_cancel_button()
         self.cancel_button.grid()
+    
+    def reset_cancel_button(self):
+        """キャンセルボタンを押せる状態に戻す"""
+        self.cancel_button.config(text="❌ キャンセル", state=tk.NORMAL)
+    
+    def set_cancel_pending(self):
+        """キャンセル受付済みの表示にする（二度押しを防ぐ）"""
+        self.cancel_button.config(text="⏳ キャンセル中...", state=tk.DISABLED)
     
     def get_listbox(self):
         """リストボックスを取得"""

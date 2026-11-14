@@ -12,6 +12,10 @@ from services.download_core.student_matcher import StudentMatcher
 from services.download_core.progress_tracker import ProgressTracker
 from models.student import sort_students
 from utils.student_selector import select_class_code_for_student
+from utils.parallel import imap_unordered
+
+# 提出確認の並列数
+CHECK_WORKERS = 6
 
 
 class SubmissionChecker:
@@ -157,30 +161,37 @@ class SubmissionChecker:
         # SharePointStudentからname_keyとfolder_nameの対応を作成
         sp_name_map = {sp.name_key: sp.folder_name for sp in sharepoint_students}
         
-        for name_key in current_class_students.keys():
+        targets = [
+            name_key for name_key in current_class_students.keys()
+            if name_key in sp_name_map
+        ]
+        search_name = assignment_name.replace('/', '_').lower()
+        
+        def check_student(name_key):
+            student_path = f"{base_folder}/{sp_name_map[name_key]}"
+            return self.api_client.get_assignment_folders(drive_id, student_path)
+        
+        for name_key, assignment_folders, error in imap_unordered(
+            targets, check_student, CHECK_WORKERS,
+            should_cancel=progress.check_cancelled
+        ):
             if progress.check_cancelled():
                 break
             
-            if name_key not in sp_name_map:
+            if error:
+                progress.log(
+                    f"   ⚠️ {sp_name_map[name_key]}: 確認に失敗しました ({error})"
+                )
                 continue
             
             checked_count += 1
-            student_name = sp_name_map[name_key]
-            student_path = f"{base_folder}/{student_name}"
-            
-            if checked_count % 10 == 0 or checked_count == len(current_class_students):
+            if checked_count % 10 == 0 or checked_count == len(targets):
                 progress.log(
-                    f"   📊 進捗: {checked_count}/{len(current_class_students)}人確認完了"
+                    f"   📊 進捗: {checked_count}/{len(targets)}人確認完了"
                 )
             
-            # 課題フォルダを検索
-            assignment_folders = self.api_client.get_assignment_folders(
-                drive_id, student_path
-            )
-            
-            search_name = assignment_name.replace('/', '_')
             for folder in assignment_folders:
-                if search_name.lower() in folder["name"].lower():
+                if search_name in folder["name"].lower():
                     submitted_students.add(name_key)
                     break
         

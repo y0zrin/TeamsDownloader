@@ -12,6 +12,8 @@ import os
 from datetime import datetime
 from typing import Optional, Callable, Tuple, List
 
+from utils.excel_convert import convert_xlsx_to_csv
+
 # SharePoint設定
 ROSTER_SITE_PATH = "/sites/HAL-OH-STAFF-v2"
 ROSTER_BASE_PATH = "Documents/A001教務部/M_名簿"
@@ -46,6 +48,20 @@ def get_academic_year_semester(now=None):
     else:
         # 後期: 1月〜3月（前年度の後期）
         return now.year - 1, SEMESTER_SECOND
+
+
+def _archive_file(path: str, log: Callable[[str], None] = print) -> None:
+    """古い名簿ファイルを退避（新しい名簿より優先されないように）"""
+    if not os.path.exists(path):
+        return
+
+    base, ext = os.path.splitext(path)
+    backup = f"{base}_old{ext}"
+    try:
+        os.replace(path, backup)
+        log(f"📦 古い名簿を退避しました: {os.path.basename(backup)}")
+    except OSError as e:
+        log(f"⚠️ 古い名簿の退避に失敗しました: {e}")
 
 
 class RosterUpdater:
@@ -146,11 +162,31 @@ class RosterUpdater:
             if success:
                 log(f"✅ 保存完了: {save_path}")
 
+                # xlsxはCSVに変換（students.csvが優先して読み込まれるため）
+                converted = True
+                if ext.lower() == ".xlsx":
+                    csv_path = os.path.abspath("students.csv")
+                    converted = convert_xlsx_to_csv(save_path, csv_path, log)
+                    if converted:
+                        save_name = "students.csv / students.xlsx"
+                    else:
+                        # 変換できない場合、古いCSVが新しい名簿より優先されないよう退避する
+                        _archive_file(os.path.abspath("students.csv"), log)
+
                 # 暗号化キャッシュを削除（再生成させる）
                 encrypted_cache = "students_encrypted.dat"
                 if os.path.exists(encrypted_cache):
                     os.remove(encrypted_cache)
-                    log("🔄 暗号化キャッシュをクリアしました（次回起動時に再生成）")
+                    log("🔄 暗号化キャッシュをクリアしました（次回読み込み時に再生成）")
+
+                if not converted:
+                    return True, (
+                        f"名簿を更新しました: {save_name}\n\n"
+                        "※ CSVへの変換に失敗しました。\n"
+                        "   Excelで students.xlsx を開き、\n"
+                        "   「CSV UTF-8 (*.csv)」形式で students.csv として\n"
+                        "   保存し直してください。"
+                    )
 
                 return True, f"名簿を更新しました: {save_name}"
             else:

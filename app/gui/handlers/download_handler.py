@@ -11,6 +11,7 @@ from tkinter import messagebox
 from gui.dialogs import (ClassCodeSelectionDialog, UnsubmittedStudentsDialog,
                          SelectStudentsDialog, ProgressDialog, NameMappingDialog,
                          DownloadCompleteDialog)
+from utils.ui_thread import run_on_main_thread
 
 class DownloadHandler:
     """ダウンロードハンドラ"""
@@ -68,12 +69,35 @@ class DownloadHandler:
         )
         self.state.download_thread.daemon = True
         self.state.download_thread.start()
+        
+        # スレッドの終了を監視してUIを確実に戻す
+        self._watch_download_thread()
+
+    def _watch_download_thread(self):
+        """ダウンロードスレッドの終了を監視
+        
+        想定外の経路でスレッドが終わってもキャンセルボタンが残らないようにする。
+        """
+        thread = self.state.download_thread
+        
+        if thread and thread.is_alive():
+            self.root.after(500, self._watch_download_thread)
+            return
+        
+        if self.state.download_in_progress:
+            self.ui_callbacks['show_download_buttons']()
+            self.state.reset_download_state()
 
     def cancel_download(self):
         """ダウンロードをキャンセル"""
         if messagebox.askyesno("確認", "ダウンロードをキャンセルしますか?"):
             self.download_service.cancel()
-            self.log("⚠️ ダウンロードをキャンセルしました")
+            self.log("⚠️ ダウンロードをキャンセルしました（残りの通信の終了を待っています）")
+            
+            # 受付済みであることを示す（二度押し防止）
+            set_pending = self.ui_callbacks.get('set_cancel_pending')
+            if set_pending:
+                set_pending()
     
     def check_unsubmitted(self, assignment_listbox):
         """未提出者を確認"""
@@ -104,11 +128,14 @@ class DownloadHandler:
                     self.root.after(0, lambda: initial_progress_dialog.close())
                     if not self.ui_callbacks['authenticate']():
                         return
-                    # 認証後、プログレスダイアログを再表示
-                    active_progress_dialog = ProgressDialog(
+                    # 認証後、プログレスダイアログを再表示（メインスレッドで）
+                    active_progress_dialog = run_on_main_thread(
                         self.root,
-                        "未提出者確認中",
-                        f"「{assignment_name}」の未提出者を確認しています..."
+                        lambda: ProgressDialog(
+                            self.root,
+                            "未提出者確認中",
+                            f"「{assignment_name}」の未提出者を確認しています..."
+                        )
                     )
                 else:
                     # 認証済みの場合は初期ダイアログをそのまま使用
@@ -185,18 +212,18 @@ class DownloadHandler:
         selected_class = classes[self.state.get_selected_class_index()]
         current_class_name = selected_class['name']
         
-        # クラス記号リストをチェック
+        # クラス記号リスト（SharePointスキャン済みなら取得できる）
         class_codes_list = self.cache.get_class_codes(current_class_name)
         if not class_codes_list:
-            messagebox.showwarning(
-                "警告",
-                f"クラス「{current_class_name}」の学生情報が取得できません。\n\n"
-                "先に「🔄 課題を手動更新」を実行して、\n"
-                "SharePointから学生リストを取得してください。"
+            self.log(
+                f"ℹ️ クラス「{current_class_name}」のクラス記号は未検出です。"
+                "クラス名から学生を絞り込みます"
             )
-            return
+            self.log("   （正確に絞り込むには「🔄 課題を手動更新」を実行してください）")
         
-        dialog = SelectStudentsDialog(self.root, students_info, current_class_name)
+        dialog = SelectStudentsDialog(
+            self.root, students_info, current_class_name, class_codes_list
+        )
         selected_students = dialog.show()
         
         if selected_students:
@@ -216,20 +243,27 @@ class DownloadHandler:
             # 認証チェック
             if not self.auth_manager.access_token:
                 if not self.ui_callbacks['authenticate']():
-                    self.root.after(0, self.ui_callbacks['show_download_buttons'])
-                    self.root.after(0, self.state.reset_download_state)
                     return
+
             
             # コールバック定義
+            # ダイアログは必ずメインスレッドで開く
+            # （ワーカースレッドから開くとウィンドウ全体が操作できなくなる）
             def class_code_dialog_callback(student_name, codes, class_name):
-                dialog = ClassCodeSelectionDialog(
-                    self.root, student_name, codes, class_name
+                return run_on_main_thread(
+                    self.root,
+                    lambda: ClassCodeSelectionDialog(
+                        self.root, student_name, codes, class_name
+                    ).show()
                 )
-                return dialog.show()
             
             def name_mapping_dialog_callback(student_name, students_info):
-                dialog = NameMappingDialog(self.root, student_name, students_info)
-                return dialog.show()
+                return run_on_main_thread(
+                    self.root,
+                    lambda: NameMappingDialog(
+                        self.root, student_name, students_info
+                    ).show()
+                )
             
             download_count, student_count = self.download_service.download_assignment(
                 selected_class,
@@ -256,15 +290,13 @@ class DownloadHandler:
                     dialog.show()
                 
                 self.root.after(0, show_complete_dialog)
-            
-            self.root.after(0, self.ui_callbacks['show_download_buttons'])
-            self.root.after(0, self.state.reset_download_state)
         
         except Exception as e:
             self.log(f"\n❌ ダウンロードエラー: {e}")
             import traceback
             traceback.print_exc()
-            
+        
+        finally:
             self.root.after(0, self.ui_callbacks['show_download_buttons'])
             self.root.after(0, self.state.reset_download_state)
     
@@ -298,11 +330,14 @@ class DownloadHandler:
                     self.root.after(0, lambda: initial_progress_dialog.close())
                     if not self.ui_callbacks['authenticate']():
                         return
-                    # 認証後、プログレスダイアログを再表示
-                    active_progress_dialog = ProgressDialog(
+                    # 認証後、プログレスダイアログを再表示（メインスレッドで）
+                    active_progress_dialog = run_on_main_thread(
                         self.root,
-                        "フォルダ構造確認中",
-                        f"「{selected_class['name']}」のフォルダ構造を確認しています..."
+                        lambda: ProgressDialog(
+                            self.root,
+                            "フォルダ構造確認中",
+                            f"「{selected_class['name']}」のフォルダ構造を確認しています..."
+                        )
                     )
                 
                 def progress_callback(msg):
@@ -329,7 +364,8 @@ class DownloadHandler:
                 # ScanErrorの場合はユーザーにエラーを通知
                 from services.assignment import ScanError
                 if isinstance(e, ScanError):
-                    self.root.after(0, lambda: messagebox.showerror("エラー", str(e)))
+                    error_text = str(e)  # except節を抜けると e は削除されるためコピー
+                    self.root.after(0, lambda: messagebox.showerror("エラー", error_text))
         
         thread = threading.Thread(target=run_debug)
         thread.daemon = True

@@ -4,7 +4,78 @@
 Microsoft Graph APIクライアント
 """
 
+import os
+from datetime import datetime, timezone
+
 import requests
+from requests.adapters import HTTPAdapter
+
+# 同時接続数（ダウンロード・スキャンの並列数より少し多めに確保）
+CONNECTION_POOL_SIZE = 16
+
+# ダウンロードのチャンクサイズ
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+
+# 通常のAPI呼び出しのタイムアウト (接続, 読み取り)
+# 応答が返らないとキャンセルもできなくなるため、必ず上限を設ける
+REQUEST_TIMEOUT = (10, 60)
+
+# ファイルダウンロードのタイムアウト (接続, 読み取り)
+DOWNLOAD_TIMEOUT = (10, 300)
+
+# Retry-Afterヘッダが長時間を指示してきた場合の待機上限（秒）
+# スロットリング時にワーカースレッドが何分も眠るとアプリの終了が遅くなる
+MAX_RETRY_AFTER = 15
+
+
+def _build_retry():
+    """429/5xx を自動リトライする設定を作成（Retry-Afterヘッダに従う）"""
+    try:
+        from urllib3.util.retry import Retry
+    except ImportError:
+        return None
+
+    class CappedRetry(Retry):
+        """Retry-Afterの待機時間に上限を設けたRetry"""
+
+        def get_retry_after(self, response):
+            retry_after = super().get_retry_after(response)
+            if retry_after is None:
+                return None
+            return min(retry_after, MAX_RETRY_AFTER)
+
+    kwargs = dict(
+        total=2,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+
+    try:
+        return CappedRetry(allowed_methods=["GET"], **kwargs)
+    except TypeError:
+        # urllib3 1.25以前
+        return CappedRetry(method_whitelist=["GET"], **kwargs)
+
+
+class DownloadAborted(Exception):
+    """ダウンロード中断（キャンセル）"""
+
+
+def parse_graph_timestamp(value):
+    """Graph APIのISO8601文字列をUNIX時刻に変換（失敗時はNone）"""
+    if not value:
+        return None
+    
+    try:
+        text = str(value).replace('Z', '+00:00')
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except ValueError:
+        return None
 
 
 class GraphAPIClient:
@@ -12,6 +83,15 @@ class GraphAPIClient:
     
     def __init__(self, auth_manager):
         self.auth_manager = auth_manager
+        
+        # 接続を使い回してTLSハンドシェイクを省く（1リクエストあたり約0.6秒の短縮）
+        self.session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=CONNECTION_POOL_SIZE,
+            pool_maxsize=CONNECTION_POOL_SIZE,
+            max_retries=_build_retry(),
+        )
+        self.session.mount("https://", adapter)
     
     def _get_headers(self):
         """認証ヘッダーを取得"""
@@ -31,7 +111,7 @@ class GraphAPIClient:
         url = f"https://graph.microsoft.com/v1.0/sites/nkzacjp.sharepoint.com:{site_path}:"
         headers = self._get_headers()
         
-        response = requests.get(url, headers=headers)
+        response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             return response.json()["id"], None
         else:
@@ -57,7 +137,7 @@ class GraphAPIClient:
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
         headers = self._get_headers()
         
-        response = requests.get(url, headers=headers)
+        response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             drives = response.json().get("value", [])
             
@@ -87,29 +167,75 @@ class GraphAPIClient:
         url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{encoded_path}:/children"
         headers = self._get_headers()
         
-        response = requests.get(url, headers=headers)
+        response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             return response.json().get("value", [])
         else:
             # エラーログを表示しないでサイレントに失敗
             return []
     
-    def download_file(self, drive_id, file_path, save_path):
-        """ファイルをダウンロード"""
-        import os
+    def download_file(self, drive_id, file_path, save_path,
+                      last_modified=None, should_cancel=None):
+        """ファイルをダウンロード
         
+        Args:
+            drive_id: ドライブID
+            file_path: SharePoint上のファイルパス
+            save_path: 保存先パス
+            last_modified: SharePoint上の最終更新日時（ISO8601）。
+                           保存後にファイルの更新日時として設定し、次回の再DL判定に使う
+            should_cancel: キャンセル判定の関数（Trueを返すと中断）
+        
+        Returns:
+            成功したらTrue
+        """
         encoded_path = requests.utils.quote(file_path)
         url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{encoded_path}:/content"
         headers = self._get_headers()
         
-        response = requests.get(url, headers=headers, stream=True)
-        if response.status_code == 200:
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            with open(save_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        # 途中で失敗したファイルを残さないよう一時ファイルに書く
+        temp_path = save_path + ".part"
+        
+        try:
+            with self.session.get(url, headers=headers, stream=True, timeout=DOWNLOAD_TIMEOUT) as response:
+                if response.status_code != 200:
+                    return False
+                
+                directory = os.path.dirname(save_path)
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
+                
+                with open(temp_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                        if should_cancel and should_cancel():
+                            raise DownloadAborted()
+                        if chunk:
+                            f.write(chunk)
+            
+            os.replace(temp_path, save_path)
+            
+            # SharePoint側の更新日時を反映（次回起動時の「更新なし」判定用）
+            timestamp = parse_graph_timestamp(last_modified)
+            if timestamp:
+                try:
+                    os.utime(save_path, (timestamp, timestamp))
+                except OSError:
+                    pass
+            
             return True
-        return False
+        
+        except DownloadAborted:
+            return False
+        
+        except (requests.RequestException, OSError):
+            return False
+        
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
     
     def get_student_folders(self, drive_id, base_folder):
         """学生フォルダのリストを取得"""
@@ -140,7 +266,7 @@ class GraphAPIClient:
         headers = self._get_headers()
 
         while url:
-            response = requests.get(url, headers=headers)
+            response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             if response.status_code == 200:
                 data = response.json()
                 items.extend(data.get("value", []))
@@ -164,7 +290,7 @@ class GraphAPIClient:
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/recycleBin/items/{item_id}"
         headers = self._get_headers()
 
-        response = requests.delete(url, headers=headers)
+        response = self.session.delete(url, headers=headers, timeout=REQUEST_TIMEOUT)
 
         if response.status_code == 204:
             return True, None
@@ -188,7 +314,7 @@ class GraphAPIClient:
         url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}"
         headers = self._get_headers()
 
-        response = requests.delete(url, headers=headers)
+        response = self.session.delete(url, headers=headers, timeout=REQUEST_TIMEOUT)
 
         if response.status_code == 204:
             return True, None

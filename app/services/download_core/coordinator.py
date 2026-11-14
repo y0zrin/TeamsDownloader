@@ -6,14 +6,21 @@
 AssignmentAccessorを使用して共通処理を簡素化
 """
 
-from typing import Optional, Callable, List
+from typing import Optional, Callable, Dict, List, Tuple
 from models.student import SharePointStudent, Student
-from models.download_result import DownloadResult, StudentDownloadResult
+from models.download_result import DownloadedFile, DownloadResult, StudentDownloadResult
 from services.download_core.assignment_accessor import AssignmentAccessor
 from services.download_core.progress_tracker import ProgressTracker
 from services.download_core.student_matcher import StudentMatcher
-from services.download_core.file_fetcher import FileFetcher
+from services.download_core.file_fetcher import FileFetcher, Submission
 from utils.exceptions import DownloadCancelledError
+from utils.parallel import imap_unordered
+
+# 提出フォルダのスキャン並列数（1人あたり2回のAPI呼び出しを並列化）
+SCAN_WORKERS = 6
+
+# ファイル転送の並列数
+DOWNLOAD_WORKERS = 4
 
 
 class DownloadCoordinator:
@@ -25,6 +32,8 @@ class DownloadCoordinator:
         self.progress = ProgressTracker()
         self.accessor = AssignmentAccessor(api_client, cache_manager)
         self.file_fetcher = FileFetcher(api_client)
+        # キャンセルを転送中にも効かせる
+        self.file_fetcher.should_cancel = lambda: self.progress.check_cancelled()
     
     def download_assignment(
         self,
@@ -50,6 +59,22 @@ class DownloadCoordinator:
             self.progress.log_header(f"📥 課題ダウンロード開始: {assignment_name}")
         
         try:
+            # 設定を反映（設定変更を即座に反映させるため毎回読み込む）
+            exclude_patterns = self.cache.get_exclude_patterns()
+            self.file_fetcher.exclude_patterns = exclude_patterns
+            if exclude_patterns:
+                self.progress.log_info(
+                    f"🚫 除外パターン: {', '.join(exclude_patterns)}"
+                )
+            
+            latest_only = self.cache.get_latest_only()
+            self.file_fetcher.latest_only = latest_only
+            self.progress.log_info(
+                "🆕 最新の提出物のみダウンロード（拡張子ごとに最新の1件）"
+                if latest_only else
+                "📚 提出物をすべてダウンロード"
+            )
+            
             # SharePointに接続
             _site_id, drive_id, drive_name, base_folder = self.accessor.connect_to_sharepoint(
                 class_config, self.progress
@@ -163,120 +188,248 @@ class DownloadCoordinator:
         """ダウンロードを実行"""
         result = DownloadResult(0, 0, output_folder)
         
-        # 課題提出者をスキャン
-        self.progress.log_section("🔍 課題提出フォルダをスキャン中...")
-        self.progress.log_info("   進捗状況を5人ごとに表示します\n")
-        
-        student_data_list = []
-        scanned_count = 0
-        
+        # 除外済みの学生を先に取り除く（無駄なAPI呼び出しを減らす）
+        targets = []
         for sp_student in sharepoint_students:
-            if self.progress.check_cancelled():
-                raise DownloadCancelledError()
-            
-            # 除外チェック
             if student_matcher and student_matcher.is_excluded(sp_student.folder_id):
                 self.progress.log_info(
                     f"  ⏭️ {sp_student.folder_name}: 除外済み（スキップ）"
                 )
                 continue
+            targets.append(sp_student)
+        
+        # 課題提出者をスキャン（並列）
+        self.progress.log_section("🔍 課題提出フォルダをスキャン中...")
+        self.progress.log_info(f"   {SCAN_WORKERS}並列で確認します\n")
+        
+        submissions = self._scan_submissions(
+            targets, drive_id, base_folder, assignment_name
+        )
+        
+        if targets:
+            self.progress.log_info(f"\n   ✅ スキャン完了: {len(targets)}人")
+        
+        # 学生情報の照合（ダイアログを出す場合があるので直列・元の順序を維持）
+        student_data_list = []
+        for sp_student in targets:
+            submission = submissions.get(sp_student.folder_id)
+            if not submission:
+                continue
             
-            scanned_count += 1
-            
-            # 進捗ログ
-            if scanned_count % 5 == 0 or scanned_count == 1:
-                self.progress.log_progress(
-                    scanned_count, len(sharepoint_students),
-                    f"処理中: {sp_student.folder_name}"
+            student_info = None
+            if student_matcher:
+                student_info = student_matcher.match_student(
+                    sp_student,
+                    class_name,
+                    class_code_dialog_callback,
+                    name_mapping_dialog_callback
                 )
             
-            # 課題フォルダをチェック
-            student_path = f"{base_folder}/{sp_student.folder_name}"
-            files, assignment_path = self.file_fetcher.fetch_assignment_files(
-                drive_id, student_path, assignment_name
-            )
+            self._log_older_submissions(sp_student, student_info, submission)
             
-            if files:
-                # 学生情報を照合
-                student_info = None
-                if student_matcher:
-                    student_info = student_matcher.match_student(
-                        sp_student,
-                        class_name,
-                        class_code_dialog_callback,
-                        name_mapping_dialog_callback
-                    )
-                
-                student_data_list.append({
-                    'sp_student': sp_student,
-                    'student_info': student_info,
-                    'files': files,
-                    'assignment_path': assignment_path
-                })
-        
-        if scanned_count > 0:
-            self.progress.log_info(f"\n   ✅ スキャン完了: {scanned_count}人")
+            student_data_list.append({
+                'sp_student': sp_student,
+                'student_info': student_info,
+                'files': submission.files,
+                'assignment_path': submission.path
+            })
         
         result.student_count = len(student_data_list)
         
         # 学生一覧を表示
         self._log_student_list(student_data_list)
         
-        # ダウンロード実行
+        # ダウンロード実行（並列）
         self.progress.log_section("📥 ダウンロード開始...")
         
-        for student_data in student_data_list:
-            if self.progress.check_cancelled():
-                raise DownloadCancelledError()
-            
-            downloaded = self._download_student_files(
-                student_data, drive_id, output_folder,
-                class_name, assignment_name
-            )
-            result.add_student_result(downloaded)
-            result.file_count += downloaded.file_count
+        student_results = self._download_files(
+            student_data_list, drive_id, output_folder, class_name, assignment_name
+        )
+        
+        for student_result in student_results:
+            result.add_student_result(student_result)
+            result.file_count += student_result.file_count
+            result.skipped_count += student_result.skipped_count
+            result.reused_count += student_result.reused_count
         
         return result
     
-    def _download_student_files(
+    def _scan_submissions(
         self,
-        student_data: dict,
+        sharepoint_students: List[SharePointStudent],
+        drive_id: str,
+        base_folder: str,
+        assignment_name: str
+    ) -> Dict[str, Submission]:
+        """課題提出フォルダを並列にスキャン
+        
+        Returns:
+            {folder_id: Submission} （提出のあった学生のみ）
+        """
+        submissions = {}
+        total = len(sharepoint_students)
+        
+        if not total:
+            return submissions
+        
+        scanned = 0
+        
+        def scan(sp_student):
+            return self.file_fetcher.fetch_assignment_files(
+                drive_id,
+                f"{base_folder}/{sp_student.folder_name}",
+                assignment_name
+            )
+        
+        for sp_student, found, error in imap_unordered(
+            sharepoint_students, scan, SCAN_WORKERS,
+            should_cancel=self.progress.check_cancelled
+        ):
+            if self.progress.check_cancelled():
+                raise DownloadCancelledError()
+            
+            if error:
+                self.progress.log_warning(
+                    f"{sp_student.folder_name}: 確認に失敗しました ({error})"
+                )
+                continue
+            
+            scanned += 1
+            if scanned == 1 or scanned % 5 == 0 or scanned == total:
+                self.progress.log_progress(
+                    scanned, total, f"処理中: {sp_student.folder_name}"
+                )
+            
+            if found.files:
+                submissions[sp_student.folder_id] = found
+        
+        # 応答待ちの途中で打ち切られた場合
+        if self.progress.check_cancelled():
+            raise DownloadCancelledError()
+        
+        return submissions
+    
+    def _download_files(
+        self,
+        student_data_list: List[dict],
         drive_id: str,
         output_folder: str,
         class_name: str,
         assignment_name: str
-    ) -> StudentDownloadResult:
-        """学生のファイルをダウンロード"""
-        sp_student = student_data['sp_student']
-        student_info = student_data['student_info']
-        files = student_data['files']
-        assignment_path = student_data['assignment_path']
+    ) -> List[StudentDownloadResult]:
+        """学生のファイルを並列にダウンロード"""
+        if not student_data_list:
+            return []
         
-        # ログ出力
-        if student_info:
-            self.progress.log_info(f"  📁 {student_info} の提出物を処理中...")
-        else:
-            self.progress.log_info(
-                f"  📁 {sp_student.folder_name} の提出物を処理中..."
+        # 出力フォルダを先に作り、ファイル単位のタスクに展開
+        tasks = []
+        for student_data in student_data_list:
+            student_data['output'] = self.file_fetcher.create_output_folder(
+                output_folder, class_name, assignment_name,
+                student_data['student_info'], student_data['sp_student'].folder_name
+            )
+            student_data['results'] = []
+            
+            for file_item in student_data['files']:
+                tasks.append((student_data, file_item))
+        
+        total = len(tasks)
+        self.progress.log_info(
+            f"{len(student_data_list)}人 / {total}ファイル "
+            f"（{DOWNLOAD_WORKERS}並列）\n"
+        )
+        
+        completed = 0
+        
+        def download(task):
+            student_data, file_item = task
+            return self.file_fetcher.download_file_item(
+                drive_id,
+                student_data['assignment_path'],
+                file_item,
+                student_data['output']
             )
         
-        # 出力フォルダを作成
-        student_output = self.file_fetcher.create_output_folder(
-            output_folder, class_name, assignment_name,
-            student_info, sp_student.folder_name
-        )
+        for task, downloaded, error in imap_unordered(
+            tasks, download, DOWNLOAD_WORKERS,
+            should_cancel=self.progress.check_cancelled
+        ):
+            if self.progress.check_cancelled():
+                raise DownloadCancelledError()
+            
+            student_data, file_item = task
+            
+            if error:
+                downloaded = DownloadedFile(
+                    file_name=file_item.get("name", "?"),
+                    file_path="",
+                    success=False,
+                    error=str(error)
+                )
+            
+            student_data['results'].append(downloaded)
+            completed += 1
+            self._log_downloaded_file(completed, total, student_data, downloaded)
         
-        # ファイルをダウンロード
-        self.progress.log_info(f"     ファイル数: {len(files)}個")
-        downloaded_files = self.file_fetcher.download_files(
-            drive_id, assignment_path, files, student_output
-        )
+        # 応答待ちの途中で打ち切られた場合
+        if self.progress.check_cancelled():
+            raise DownloadCancelledError()
         
-        return StudentDownloadResult(
-            sharepoint_name=sp_student.folder_name,
-            student_info=student_info,
-            files=downloaded_files,
-            folder_path=student_output
+        return [
+            StudentDownloadResult(
+                sharepoint_name=student_data['sp_student'].folder_name,
+                student_info=student_data['student_info'],
+                files=student_data['results'],
+                folder_path=student_data['output']
+            )
+            for student_data in student_data_list
+        ]
+    
+    def _log_older_submissions(
+        self,
+        sp_student: SharePointStudent,
+        student_info: Optional[Student],
+        submission: Submission
+    ):
+        """最新版以外をスキップしたことをログ出力"""
+        if not submission.old_files and not submission.other_folders:
+            return
+        
+        name = str(student_info) if student_info else sp_student.folder_name
+        
+        for folder in submission.other_folders:
+            self.progress.log_info(
+                f"  🆕 [{name}] 古いフォルダをスキップ: {folder['name']}"
+            )
+        
+        for old_file, newest in submission.old_files:
+            self.progress.log_info(
+                f"  🆕 [{name}] 旧版をスキップ: {old_file['name']} "
+                f"→ {newest['name']}"
+            )
+    
+    def _log_downloaded_file(
+        self,
+        completed: int,
+        total: int,
+        student_data: dict,
+        downloaded: DownloadedFile
+    ):
+        """ファイル1個分の結果をログ出力"""
+        student_info = student_data['student_info']
+        name = str(student_info) if student_info else student_data['sp_student'].folder_name
+        
+        if downloaded.skipped:
+            mark = f"⏭️ 除外({downloaded.skip_reason})"
+        elif downloaded.reused:
+            mark = "✔️ 取得済み"
+        elif downloaded.success:
+            mark = "✅"
+        else:
+            mark = "❌ 失敗"
+        
+        self.progress.log_info(
+            f"({completed}/{total}) {mark} [{name}] {downloaded.file_name}"
         )
     
     def _log_student_list(self, student_data_list: List[dict]):
@@ -318,6 +471,14 @@ class DownloadCoordinator:
             self.progress.log_success("ダウンロード完了!")
             self.progress.log_info(f"   学生数: {result.student_count}人")
             self.progress.log_info(f"   ファイル数: {result.file_count}個")
+            if result.reused_count:
+                self.progress.log_info(
+                    f"   取得済みのためスキップ: {result.reused_count}個"
+                )
+            if result.skipped_count:
+                self.progress.log_info(
+                    f"   除外したファイル: {result.skipped_count}個"
+                )
             self.progress.log_info(f"   保存先: {result.folder_path}")
     
     def cancel(self):

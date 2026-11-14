@@ -18,6 +18,12 @@ from datetime import datetime
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(REPO_ROOT, "app")
 VERSION_FILE = os.path.join(APP_DIR, "core", "version.py")
+STARTUP_SCRIPT = os.path.join(APP_DIR, "startup_gui.ps1")
+
+# Python アップデート後に再インストールが必要なライブラリ（startup_gui.ps1 と揃える）
+REQUIRED_PACKAGES = ["msal", "requests"]
+OPTIONAL_PACKAGES = ["cryptography", "openpyxl", "pyperclip", "olefile"]
+PYTHON_DOWNLOAD_URL = "https://www.python.org/downloads/"
 
 # ZIPに含めるファイル（REPO_ROOT相対）
 INCLUDE_FILES = [
@@ -52,6 +58,18 @@ def get_current_version():
     if match:
         return match.group(1)
     return "0.0.0"
+
+
+def get_recommended_python_version():
+    """startup_gui.ps1 の $RecommendedPythonVersion を読み取る（単一の情報源にする）"""
+    try:
+        with open(STARTUP_SCRIPT, encoding="utf-8-sig") as f:
+            match = re.search(r'\$RecommendedPythonVersion\s*=\s*\[Version\]"([^"]+)"', f.read())
+        if match:
+            return match.group(1)
+    except OSError:
+        pass
+    return None
 
 
 def update_version(new_version):
@@ -170,12 +188,27 @@ def generate_release_notes(version, prev_version):
     else:
         lines.append("- （変更内容をここに記載）")
 
+    recommended_python = get_recommended_python_version()
+    pip_command = "python -m pip install " + " ".join(REQUIRED_PACKAGES + OPTIONAL_PACKAGES)
+
     lines.extend([
+        "",
+        "### 動作環境",
+        "",
+    ])
+    if recommended_python:
+        lines.append(f"- Python {recommended_python} 以降を推奨（最新版は {PYTHON_DOWNLOAD_URL} から）")
+    else:
+        lines.append(f"- 最新版の Python を推奨（{PYTHON_DOWNLOAD_URL}）")
+    lines.extend([
+        "- Python が未導入または古い場合は、起動時に最新版を使用 PC に合わせて（64-bit / ARM64 / 32-bit）"
+        "自動ダウンロード・インストールできます。必要なライブラリも続けて自動で導入されます",
+        f"- 手動でライブラリを入れる場合: `{pip_command}`",
         "",
         "### インストール方法",
         "",
         "1. ZIPファイルをダウンロードして展開",
-        "2. `startup_gui.bat` をダブルクリックして起動",
+        "2. `startup_gui.bat` をダブルクリックして起動（Python やライブラリが足りなければ画面の案内に従うだけで導入されます）",
         "",
     ])
 

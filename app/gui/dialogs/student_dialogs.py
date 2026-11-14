@@ -7,7 +7,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from models.student import format_student_display, sort_students
-from utils.student_selector import filter_students_by_class
+from utils.student_selector import filter_students_by_class, flatten_students_info
 from gui.dialogs.dialog_utils import create_centered_dialog
 
 try:
@@ -113,9 +113,30 @@ class UnsubmittedStudentsDialog:
 
 class SelectStudentsDialog:
     """特定学生選択ダイアログ（全学生表示版）"""
-    def __init__(self, parent, students_info, current_class_name):
+    def __init__(self, parent, students_info, current_class_name, class_codes=None):
+        """
+        Args:
+            parent: 親ウィンドウ
+            students_info: 名簿の全学生情報
+            current_class_name: 現在のクラス名
+            class_codes: SharePointスキャンで検出済みのクラス記号リスト
+        """
         self.selected_students = None
-        self.dialog = create_centered_dialog(parent, "ダウンロード対象学生を選択", 500, 620)
+        self.dialog = create_centered_dialog(parent, "ダウンロード対象学生を選択", 500, 660)
+
+        # 学生データを準備（クラス絞り込み + 全学生）
+        from core.cache import AssignmentCache
+        cache = AssignmentCache()
+
+        self.every_student = sort_students(flatten_students_info(students_info))
+        self.class_students = sort_students(filter_students_by_class(
+            students_info, current_class_name, cache, class_codes
+        ))
+
+        # クラスに一致する学生が名簿に居ない場合は全学生を表示する
+        self.show_all_var = tk.BooleanVar(value=not self.class_students)
+        self.all_students = self.class_students or self.every_student
+        self.displayed_students = []
         
         # タイトル
         title_frame = ttk.Frame(self.dialog, padding="10")
@@ -141,6 +162,19 @@ class SelectStudentsDialog:
             foreground="gray"
         ).pack()
         
+        # クラスに一致する学生が見つからなかった場合の案内
+        if not self.class_students:
+            ttk.Label(
+                title_frame,
+                text=(
+                    f"⚠️ クラス「{current_class_name}」に一致するクラス記号の学生が\n"
+                    f"名簿にありません。名簿の全学生を表示しています。"
+                ),
+                font=("", 9),
+                foreground="red",
+                justify=tk.CENTER
+            ).pack(pady=(5, 0))
+        
         # 検索バー
         search_frame = ttk.Frame(self.dialog, padding="10")
         search_frame.pack(fill=tk.X)
@@ -150,8 +184,19 @@ class SelectStudentsDialog:
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("", 10))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.search_var.trace('w', self._filter_list)
+        self.search_var.trace_add('write', self._filter_list)
         self.search_entry.focus()
+        
+        # 表示切替
+        toggle_frame = ttk.Frame(self.dialog, padding=(10, 0))
+        toggle_frame.pack(fill=tk.X)
+        
+        ttk.Checkbutton(
+            toggle_frame,
+            text=f"名簿の全学生を表示（全{len(self.every_student)}人）",
+            variable=self.show_all_var,
+            command=self._on_show_all_changed
+        ).pack(side=tk.LEFT)
         
         # 学生リスト
         list_frame = ttk.Frame(self.dialog, padding="10")
@@ -168,15 +213,6 @@ class SelectStudentsDialog:
         )
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.listbox.yview)
-        
-        # 学生データをフィルタリングしてソート（共通関数を使用）
-        from core.cache import AssignmentCache
-        cache = AssignmentCache()
-        
-        self.all_students = filter_students_by_class(
-            students_info, current_class_name, cache
-        )
-        self.all_students = sort_students(self.all_students)
         
         self._populate_list()
         
@@ -234,9 +270,22 @@ class SelectStudentsDialog:
         if students is None:
             students = self.all_students
         
-        for student_info in students:
+        # 表示中のリストを保持（検索中でも正しい学生を取得するため）
+        self.displayed_students = list(students)
+        
+        for student_info in self.displayed_students:
             display_text = format_student_display(student_info)
             self.listbox.insert(tk.END, display_text)
+    
+    def _on_show_all_changed(self):
+        """全学生表示の切り替え"""
+        if self.show_all_var.get() or not self.class_students:
+            self.all_students = self.every_student
+        else:
+            self.all_students = self.class_students
+        
+        self._filter_list()
+        self._on_selection_changed()
     
     def _filter_list(self, *args):
         """検索フィルタ"""
@@ -277,8 +326,8 @@ class SelectStudentsDialog:
         else:
             self.selected_students = []
             for idx in selected_indices:
-                if idx < len(self.all_students):
-                    student_info = self.all_students[idx]
+                if idx < len(self.displayed_students):
+                    student_info = self.displayed_students[idx]
                     self.selected_students.append({
                         'class_code': student_info.get('class_code'),
                         'attendance_number': student_info.get('attendance_number'),
@@ -347,7 +396,7 @@ class NameMappingDialog:
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("", 10))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.search_var.trace('w', self._filter_list)
+        self.search_var.trace_add('write', self._filter_list)
         self.search_entry.focus()
         
         # 学生リスト
@@ -370,16 +419,7 @@ class NameMappingDialog:
         self.listbox.bind('<Double-Button-1>', lambda e: self._on_select())
         
         # 学生データを準備してソート（共通関数を使用）
-        self.all_students = []
-        for name_key, info in students_info.items():
-            if isinstance(info, list):
-                # 複数クラスの場合は全て追加
-                for item in info:
-                    self.all_students.append(item)
-            else:
-                self.all_students.append(info)
-        
-        self.all_students = sort_students(self.all_students)
+        self.all_students = sort_students(flatten_students_info(students_info))
         
         self._populate_list()
         

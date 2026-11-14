@@ -82,7 +82,7 @@ class DeleteConfirmDialog:
         ).pack(anchor=tk.W, pady=(0, 5))
 
         self.confirm_var = tk.StringVar()
-        self.confirm_var.trace("w", self._on_input_change)
+        self.confirm_var.trace_add("write", self._on_input_change)
 
         self.confirm_entry = ttk.Entry(
             main_frame,

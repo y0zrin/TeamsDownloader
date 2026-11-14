@@ -7,6 +7,11 @@
 import json
 import os
 
+from utils.parallel import imap_unordered
+
+# 学生フォルダのスキャン並列数
+SCAN_WORKERS = 6
+
 
 class ScanError(Exception):
     """スキャン失敗時の例外"""
@@ -227,28 +232,32 @@ class AssignmentService:
         assignments_set = set()
         
         log(f"\n🔍 課題フォルダスキャン開始...")
-        log(f"   進捗状況を5人ごとに表示します")
+        log(f"   {SCAN_WORKERS}並列で確認します（進捗は5人ごとに表示）")
         log("")
         
+        def scan_student(student_folder):
+            student_path = f"{base_folder}/{student_folder['name']}"
+            return api_client.get_assignment_folders(drive_id, student_path)
+        
         scanned_count = 0
-        for student_folder in student_folders:
-            scanned_count += 1
-            
+        for student_folder, assignment_folders, error in imap_unordered(
+            student_folders, scan_student, SCAN_WORKERS
+        ):
             student_name = student_folder['name']
             
-            # 進捗ログ(5人ごと + 処理中の学生名を常時表示)
+            if error:
+                log(f"   ⚠️ {student_name}: 確認に失敗しました ({error})")
+                continue
+            
+            scanned_count += 1
+            
+            # 進捗ログ(5人ごと + 最初と最後は必ず表示)
             if scanned_count % 5 == 0:
-                progress_msg = f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了 (処理中: {student_name})"
-                log(progress_msg)
+                log(f"   📊 進捗: {scanned_count}/{total_students}人スキャン完了 (処理中: {student_name})")
             elif scanned_count == 1:
-                # 最初の1人目は必ず表示
                 log(f"   🔍 スキャン中: 1人目 {student_name}")
             elif scanned_count == total_students:
-                # 最後の1人も必ず表示
                 log(f"   🔍 スキャン中: {scanned_count}/{total_students}人目 {student_name} (最終)")
-            
-            student_path = f"{base_folder}/{student_folder['name']}"
-            assignment_folders = api_client.get_assignment_folders(drive_id, student_path)
             
             for folder in assignment_folders:
                 assignments_set.add(folder["name"])

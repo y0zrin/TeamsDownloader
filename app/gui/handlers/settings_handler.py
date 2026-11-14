@@ -7,7 +7,7 @@
 import os
 import tkinter as tk
 from tkinter import messagebox, filedialog
-from gui.dialogs import FontSettingsDialog
+from gui.dialogs import FontSettingsDialog, ExcludeSettingsDialog
 
 
 class SettingsHandler:
@@ -45,6 +45,14 @@ class SettingsHandler:
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="📁 ダウンロード先設定", command=self.set_download_path)
         menu.add_command(label="🔄 ダウンロード先を初期化", command=self.reset_download_path)
+        menu.add_command(label="🚫 ダウンロード除外設定", command=self.show_exclude_settings)
+        # 最新の提出物のみダウンロード（チェックマーク付きトグル）
+        latest_only = self.cache.get_latest_only()
+        latest_label = (
+            "✅ 最新の提出物のみダウンロード" if latest_only
+            else "　 最新の提出物のみダウンロード"
+        )
+        menu.add_command(label=latest_label, command=self.toggle_latest_only)
         menu.add_separator()
         menu.add_command(label="🔤 フォント設定", command=self.show_font_settings)
         menu.add_command(label="🧹 キャッシュクリア", command=self.clear_cache)
@@ -217,6 +225,32 @@ class SettingsHandler:
                 else:
                     self.log("ℹ️ クリアする項目が選択されませんでした")
 
+    def toggle_latest_only(self):
+        """最新の提出物のみダウンロードする設定を切り替え"""
+        new_value = not self.cache.get_latest_only()
+        self.cache.set_latest_only(new_value)
+        
+        if new_value:
+            self.log("🆕 最新の提出物のみダウンロード: ON（拡張子ごとに最新の1件）")
+        else:
+            self.log("🆕 最新の提出物のみダウンロード: OFF（提出物をすべてダウンロード）")
+    
+    def show_exclude_settings(self):
+        """ダウンロード除外設定を表示"""
+        current = self.cache.get_exclude_patterns()
+        dialog = ExcludeSettingsDialog(self.root, current)
+        patterns = dialog.show()
+        
+        if patterns is None:
+            return
+        
+        saved = self.cache.set_exclude_patterns(patterns)
+        
+        if saved:
+            self.log(f"🚫 除外パターンを設定しました: {', '.join(saved)}")
+        else:
+            self.log("🚫 除外パターンをクリアしました（すべてダウンロードします）")
+    
     def update_roster(self):
         """名簿をSharePointから更新"""
         import threading
@@ -276,8 +310,9 @@ class SettingsHandler:
 
             except Exception as e:
                 self.log(f"❌ 名簿更新エラー: {e}")
+                error_text = str(e)  # except節を抜けると e は削除されるためコピー
                 self.root.after(0, lambda: progress_dialog.close())
-                self.root.after(0, lambda: messagebox.showerror("エラー", str(e)))
+                self.root.after(0, lambda: messagebox.showerror("エラー", error_text))
 
         thread = threading.Thread(target=run_update, daemon=True)
         thread.start()

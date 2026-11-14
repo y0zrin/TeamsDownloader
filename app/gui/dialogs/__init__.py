@@ -13,7 +13,7 @@ from .student_dialogs import (
     SelectStudentsDialog,
     NameMappingDialog
 )
-from .settings_dialogs import FontSettingsDialog
+from .settings_dialogs import FontSettingsDialog, ExcludeSettingsDialog
 from .progress_dialogs import ProgressDialog, DownloadCompleteDialog
 from .delete_dialogs import DeleteConfirmDialog, DeleteCompleteDialog
 
@@ -25,6 +25,7 @@ __all__ = [
     'SelectStudentsDialog',
     'NameMappingDialog',
     'FontSettingsDialog',
+    'ExcludeSettingsDialog',
     'ProgressDialog',
     'DownloadCompleteDialog',
     'DeleteConfirmDialog',

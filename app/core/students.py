@@ -8,6 +8,7 @@ import os
 import csv
 from utils.file_utils import detect_excel_format, check_drm_protection
 from utils.crypto import ENCRYPTION_AVAILABLE, encrypt_data, decrypt_data
+from utils.excel_convert import convert_xlsx_to_csv
 
 
 ENCRYPTED_STUDENTS_FILE = "students_encrypted.dat"
@@ -47,21 +48,28 @@ def load_students_info():
     
     # DRM保護をチェック
     if check_drm_protection(found_file):
-        print(f"="*60)
-        print(f"🔒 {found_file} はDRM保護されています")
-        print(f"="*60)
-        print(f"⚠️  このファイルはDRM(デジタル著作権管理)で保護されており、")
-        print(f"    プログラムで自動的に読み込むことができません。\n")
-        print(f"📋 対処方法:")
-        print(f"   1. Excelで {found_file} を開く")
-        print(f"   2. 「ファイル」→「名前を付けて保存」")
-        print(f"   3. 形式を「CSV UTF-8 (*.csv)」に変更")
-        print(f"   4. ファイル名を「students.csv」として保存")
-        print(f"   5. このスクリプトと同じフォルダに配置")
-        print(f"   6. スクリプトを再実行")
-        print(f"="*60)
-        print()
-        return None
+        print(f"🔒 {found_file} はDRM(暗号化)保護されています")
+        print(f"   Excel経由でCSVへの変換を試みます...")
+        
+        # Excelはログイン中のユーザーの権限で復号できるため、CSVに変換して読み込む
+        if convert_xlsx_to_csv(found_file, "students.csv"):
+            found_file = "students.csv"
+        else:
+            print(f"="*60)
+            print(f"🔒 {found_file} を読み込めませんでした")
+            print(f"="*60)
+            print(f"⚠️  このファイルはDRM(デジタル著作権管理)で保護されており、")
+            print(f"    プログラムで自動的に読み込むことができません。\n")
+            print(f"📋 対処方法:")
+            print(f"   1. Excelで {found_file} を開く")
+            print(f"   2. 「ファイル」→「名前を付けて保存」")
+            print(f"   3. 形式を「CSV UTF-8 (*.csv)」に変更")
+            print(f"   4. ファイル名を「students.csv」として保存")
+            print(f"   5. このスクリプトと同じフォルダに配置")
+            print(f"   6. スクリプトを再実行")
+            print(f"="*60)
+            print()
+            return None
     
     # 実際の形式を検出
     actual_format = detect_excel_format(found_file)

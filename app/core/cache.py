@@ -23,6 +23,7 @@ FONT_SIZES = {
 DEFAULT_FONT_SIZE = 'small'  # 現在は2番目に小さい状態
 DEFAULT_DOWNLOAD_PATH = '../downloads'  # デフォルトダウンロード先
 DEFAULT_EMPTY_RECYCLE_BIN = False  # 削除後にごみ箱を空にしない（デフォルト）
+DEFAULT_LATEST_ONLY = True  # 最新の提出物のみダウンロード（デフォルト）
 
 
 class AssignmentCache:
@@ -152,6 +153,8 @@ class AssignmentCache:
         font_size = self.cache_data.get('font_size', DEFAULT_FONT_SIZE)
         download_path = self.cache_data.get('download_path', DEFAULT_DOWNLOAD_PATH)
         empty_recycle_bin = self.cache_data.get('empty_recycle_bin', DEFAULT_EMPTY_RECYCLE_BIN)
+        latest_only = self.cache_data.get('latest_only', DEFAULT_LATEST_ONLY)
+        exclude_patterns = self.cache_data.get('exclude_patterns', [])
         cache_version = self.cache_data.get('_cache_version', 2)
 
         # キャッシュをクリア
@@ -161,6 +164,8 @@ class AssignmentCache:
         self.cache_data['font_size'] = font_size
         self.cache_data['download_path'] = download_path
         self.cache_data['empty_recycle_bin'] = empty_recycle_bin
+        self.cache_data['latest_only'] = latest_only
+        self.cache_data['exclude_patterns'] = exclude_patterns
         self.cache_data['_cache_version'] = cache_version
 
         self.save_cache()
@@ -333,6 +338,32 @@ class AssignmentCache:
         self.cache_data['download_path'] = DEFAULT_DOWNLOAD_PATH
         self.save_cache()
         return DEFAULT_DOWNLOAD_PATH
+
+    # ========== 最新の提出物のみダウンロード設定 ==========
+    
+    def get_latest_only(self):
+        """最新の提出物のみダウンロードする設定を取得"""
+        return self.cache_data.get('latest_only', DEFAULT_LATEST_ONLY)
+    
+    def set_latest_only(self, enabled):
+        """最新の提出物のみダウンロードする設定を保存"""
+        self.cache_data['latest_only'] = bool(enabled)
+        self.save_cache()
+        return True
+
+    # ========== ダウンロード除外設定 ==========
+    
+    def get_exclude_patterns(self):
+        """ダウンロード除外パターンを取得"""
+        from utils.exclusion import normalize_patterns
+        return normalize_patterns(self.cache_data.get('exclude_patterns', []))
+    
+    def set_exclude_patterns(self, patterns):
+        """ダウンロード除外パターンを保存"""
+        from utils.exclusion import normalize_patterns
+        self.cache_data['exclude_patterns'] = normalize_patterns(patterns)
+        self.save_cache()
+        return self.cache_data['exclude_patterns']
 
     # ========== クラス記号キャッシュ ==========
     

@@ -73,11 +73,34 @@ class DeleteHandler:
         self.state.delete_thread.daemon = True
         self.state.delete_thread.start()
 
+        # スレッドの終了を監視してUIを確実に戻す
+        self._watch_delete_thread()
+
+    def _watch_delete_thread(self):
+        """削除スレッドの終了を監視
+
+        想定外の経路でスレッドが終わってもキャンセルボタンが残らないようにする。
+        """
+        thread = self.state.delete_thread
+
+        if thread and thread.is_alive():
+            self.root.after(500, self._watch_delete_thread)
+            return
+
+        if self.state.delete_in_progress:
+            self.ui_callbacks['show_download_buttons']()
+            self.state.reset_delete_state()
+
     def cancel_delete(self):
         """削除をキャンセル"""
         if messagebox.askyesno("確認", "削除をキャンセルしますか?"):
             self.delete_service.cancel()
-            self.log("⚠️ 削除をキャンセルしました")
+            self.log("⚠️ 削除をキャンセルしました（残りの通信の終了を待っています）")
+
+            # 受付済みであることを示す（二度押し防止）
+            set_pending = self.ui_callbacks.get('set_cancel_pending')
+            if set_pending:
+                set_pending()
 
     def _delete_assignment_background(self, selected_class, assignment_name):
         """バックグラウンドで削除実行"""
@@ -85,8 +108,6 @@ class DeleteHandler:
             # 認証チェック
             if not self.auth_manager.access_token:
                 if not self.ui_callbacks['authenticate']():
-                    self.root.after(0, self.ui_callbacks['show_download_buttons'])
-                    self.root.after(0, self.state.reset_delete_state)
                     return
 
             result = self.delete_service.delete_assignment(

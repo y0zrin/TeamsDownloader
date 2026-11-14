@@ -5,7 +5,10 @@
 """
 
 import threading
+import time
+
 from gui.dialogs import DeviceCodeDialog
+from utils.ui_thread import run_on_main_thread
 
 
 class AuthHandler:
@@ -23,45 +26,47 @@ class AuthHandler:
         self.state = state
     
     def authenticate_with_gui(self):
-        """GUI付き認証"""
-        auth_result = {'success': False, 'completed': False}
+        """GUI付き認証
+        
+        ワーカースレッドから呼ばれることがあるため、
+        ダイアログの生成と待機は必ずメインスレッドで行う。
+        """
+        auth_result = {'success': False}
+        completed = threading.Event()
 
         def gui_callback(user_code, verification_uri):
-            # ダイアログを表示
-            self.state.device_code_dialog = DeviceCodeDialog(
-                self.root, user_code, verification_uri
-            )
+            # ダイアログは認証スレッドから呼ばれるのでメインスレッドに依頼する
+            def show_dialog():
+                self.state.device_code_dialog = DeviceCodeDialog(
+                    self.root, user_code, verification_uri
+                )
+            
+            run_on_main_thread(self.root, show_dialog)
 
         def auth_thread():
-            # 別スレッドで認証実行
-            result = self.auth_manager.authenticate(gui_callback=gui_callback)
-            auth_result['success'] = result
-            auth_result['completed'] = True
+            try:
+                auth_result['success'] = self.auth_manager.authenticate(
+                    gui_callback=gui_callback
+                )
+            finally:
+                completed.set()
+                
+                # 認証完了後、ダイアログを閉じる
+                dialog = self.state.device_code_dialog
+                if dialog:
+                    self.root.after(0, dialog.close)
 
-            # 認証完了後、ダイアログを閉じる
-            if self.state.device_code_dialog:
-                self.root.after(0, lambda: self.state.device_code_dialog.close())
-
-        # 認証スレッドを開始
         thread = threading.Thread(target=auth_thread)
         thread.daemon = True
         thread.start()
 
-        # 認証完了を待つ（ポーリング方式でGUIをブロックしない）
-        def wait_for_auth():
-            if not auth_result['completed']:
-                self.root.after(100, wait_for_auth)  # 100ms後に再チェック
-
-        wait_for_auth()
-
-        # ダイアログが存在する場合は、その終了を待つ
-        if self.state.device_code_dialog and self.state.device_code_dialog.dialog.winfo_exists():
-            self.state.device_code_dialog.dialog.wait_window()
-
-        # 念のため、まだ完了していない場合は待機
-        while not auth_result['completed']:
-            self.root.update()
-            import time
-            time.sleep(0.1)
+        if threading.current_thread() is threading.main_thread():
+            # メインスレッドから呼ばれた場合は、画面を止めないようイベントを回しながら待つ
+            while not completed.is_set():
+                self.root.update()
+                time.sleep(0.05)
+        else:
+            # ワーカースレッドからはTkに触らずに待つ
+            completed.wait()
 
         return auth_result['success']
